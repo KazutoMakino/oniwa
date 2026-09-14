@@ -1,0 +1,19 @@
+{
+  "project_name": "oniwa-lm",
+  "version": "0.1.0",
+  "timestamp_utc": "2026-09-15T15:18:42Z",
+  "random_seed": 0,
+  "model_config": {
+    "vocab_size": 2333,
+    "seq_len": 32,
+    "dim": 64,
+    "num_layers": 2,
+    "num_heads": 2,
+    "num_kv_heads": 2,
+    "ffn_dim": 128
+  },
+  "dataset_sha256": "1ff7e9bb1d02c96694b2f5275f6d7d41b7db8f0efeadaa901a6911d840675f4b",
+  "initial_weights_sha256": "fbcb48061255662eca84539bf652043b1018fd4901b2c02614b2f85a35500015",
+  "platform_arch": "x86_64",
+  "os_name": "linux"
+}

@@ -1,0 +1,29 @@
+[package]
+name = "oniwa-lm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Pure Rust minimal training engine inspired by llm.c, adopting modern transformer primitives (RMSNorm, RoPE, SwiGLU, GQA)."
+
+[dependencies]
+# 高速な行列積演算 (OpenBLAS/BLIS相当のピュアRust/アセンブリ最適化)
+matrixmultiply = "0.3"
+
+# CPUマルチコア並列化
+rayon = "1.10"
+
+# メモリマップによるゼロコピートークン読み込み
+memmap2 = "0.9"
+
+# 決定論的乱数生成 (プラットフォーム間でビット完全一致する再現性を保証)
+rand = "0.8"
+rand_chacha = "0.3"
+
+# 監査可能・完全ログ出力用
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# 重み・データセット・ステップ状態のSHA-256チェックサム検証
+sha2 = "0.10"
+

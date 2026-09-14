@@ -1,2 +1,115 @@
-# oniwa
-ONIWA: Organic Non-datacenter Intelligence Without Abuse
+# ONIWA (お庭)
+> **ONIWA: Organic Non-datacenter Intelligence Without Abuse**  
+> — 家庭菜園としての知能、クリーンな土壌と自己変容するアーキテクチャ —
+
+現代の生成AIにおける「GPU数万枚・パラメータ数千億のパワーゲーム」や「無断スクレイピング・合成データの泥沼」に対するアンチテーゼとして、出自が100%追跡可能なクリーンなデータのみを土壌とし、エッジ環境（Raspberry Pi等）でも掌握できる自作知能の育成を目指すプロジェクトです。
+
+---
+
+## 構想：2つの車輪と土壌
+
+1. **第1の輪: `oniwa-lm` (`crates/oniwa-lm`)**
+   - Pure Rust による極小言語モデル（SLM）学習・推論エンジン。
+   - `llm.c` に着想を得つつ、RMSNorm, RoPE, SwiGLU, GQA 等のモダン・プリミティブを採用。
+   - 決定論的再現性、完全監査台帳（Provenance Ledger）、消費電力・温度監視機能を内包。
+2. **第2の輪: `oniwa-grow` (`crates/oniwa-grow`, 計画中)**
+   - 固定サイズのネットワークではなく、刺激に応じてシナプスが生え、使われないノードが枯れる自己変容・動的生命モデル。
+3. **土壌づくり: `pipelines/` (計画中)**
+   - 青空文庫、e-Gov、国立国会図書館等のオープンデータからクリーンコーパスを精製するデータパイプライン。
+
+---
+
+## リポジトリ構成
+
+本リポジトリは **Cargo Workspace** として構成されています。
+
+```text
+oniwa/
+├── Cargo.toml                  # Workspace ルート設定 (crates/*, pipelines)
+├── Cargo.lock
+├── data/                       # [共通土壌] コーパス・語彙・トークンバイナリ
+│   ├── raw/                    # ダウンロードキャッシュ (zip/txt)
+│   ├── corpus/                 # クレンジング済み個別作品
+│   ├── corpus_combined.txt     # 統合テキストコーパス
+│   ├── vocab.json              # 共通文字語彙テーブル
+│   └── tokens.bin              # 共通トークン列バイナリ
+├── logs/                       # [共通台帳]
+│   ├── ledger_index.jsonl      # データ系譜・推論・学習の統一監査台帳
+│   └── growth_journal.md       # 観葉植物・生育観察日記
+├── docs/                       # プロジェクト全体の思想・憲章・仕様書
+│   ├── 00_oniwa-project-manifesto.md
+│   ├── 06_thermal_and_end_to_end_provenance.md
+│   ├── 07_data_ingestion_charter.md
+│   └── 08_green_energy_and_power_tracking.md
+├── pipelines/                  # [土壌づくり] データ収集・クレンジング・前処理クレート
+│   ├── Cargo.toml              # (oniwa-pipeline)
+│   ├── README.md
+│   └── src/                    # 青空文庫クローラー、ルビ・注記除去、CLI
+└── crates/
+    └── oniwa-lm/               # [種・エンジン] Pure Rust 言語モデルクレート
+        ├── Cargo.toml
+        ├── src/                # Transformerモデル、手動Autograd、学習・推論
+        ├── checkpoints/        # 学習チェックポイント
+        └── docs/               # アーキテクチャ詳細設計書
+```
+
+---
+
+## クイックスタート
+
+### 1. ビルド & テスト
+```bash
+cargo check --workspace
+cargo test --workspace
+```
+
+### 2. 青空文庫パブリックドメイン・コーパスの自動収集 (`oniwa-pipeline`)
+法・コンプライアンス（著作権満了作品のみ）を厳格に守り、代表的な名作群を自動取得・クレンジング・系譜記録します。
+```bash
+# 代表的な名作群（太宰治、芥川龍之介、中島敦、宮沢賢治、夏目漱石、森鴎外など）を一括収集 & コーパス生成
+cargo run --release -p oniwa-pipeline -- --preset
+
+# 特定の著者の著作権満了作品を片っ端から検索・追加収集
+cargo run --release -p oniwa-pipeline -- --author "夏目漱石" --limit 5 --build
+
+# 現在の収集状況と監査台帳の確認
+cargo run --release -p oniwa-pipeline -- --status
+```
+
+### 3. 学習の実行
+統合コーパス（複数作品）をもとに、本格Transformer（Self-Attention + RoPE + SwiGLU + Cosine LR Decay）で学習します。
+```bash
+# 基本実行 (500ステップ, プロンプト指定)
+cargo run --release -p oniwa-lm --bin train -- --steps 500 --reset --prompt "メロスは、"
+
+# カスタムプロンプトで言葉の成長を観察
+cargo run --release -p oniwa-lm --bin train -- --steps 500 --prompt "李徴は、"
+
+# 既存チェックポイントから追加で 100 ステップ継続学習
+cargo run --release -p oniwa-lm --bin train -- --add-steps 100
+
+# オプション:
+#   --add-steps <N> : 現在のチェックポイントから追加学習するステップ数
+#   --steps <N>     : 目標ステップ数 (指定値が現在以下の場合は自動で追加学習)
+#   --prompt <text> : 途中観測プロンプト (デフォルト: "その時、")
+#   --gen-len <N>   : 生成文字数 (デフォルト: 30)
+#   --interval <N>  : 観測・ログ間隔 (デフォルト: 25)
+#   --reset         : 既存チェックポイントを破棄して新規開始
+#   --infinite, -i  : 無限学習ループ
+```
+学習中の生成文（言葉の芽吹き）は、**`crates/oniwa-lm/logs/growth_journal.md`** に観葉植物の観察日記として自動記録されます。
+
+### 4. インタラクティブ推論 (チャット)
+```bash
+cargo run --release -p oniwa-lm --bin chat
+```
+
+---
+
+## ドキュメント
+
+- [プロジェクト構想書（マニフェスト）](docs/00_oniwa-project-manifesto.md)
+- [データ受け入れ憲章（Data Ingestion Charter）](docs/07_data_ingestion_charter.md)
+- [環境負荷・グリーン電力トラッキング](docs/08_green_energy_and_power_tracking.md)
+- [監査台帳と温度管理仕様](docs/06_thermal_and_end_to_end_provenance.md)
+- [oniwa-lm アーキテクチャ設計](crates/oniwa-lm/docs/01_llm_c_architecture.md)
