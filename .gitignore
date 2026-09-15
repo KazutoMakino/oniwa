@@ -48,6 +48,7 @@ crates/oniwa-lm/data/*
 checkpoints/**/weights.bin
 crates/oniwa-lm/checkpoints/**/weights.bin
 
-# Detailed step-by-step training logs (keep growth_journal.md, manifest.json, and ledger)
-**/logs/runs/**/steps.jsonl
-**/logs/runs/**/growth_journal.jsonl
+# Detailed step-by-step training logs (keep root growth_journal.md and ledger)
+/logs/runs/
+**/logs/runs/**
+

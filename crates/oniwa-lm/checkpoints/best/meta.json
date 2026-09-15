@@ -1,10 +1,10 @@
 {
   "dim": 64,
-  "loss": 6.362373352050781,
+  "loss": 3.688901424407959,
   "num_layers": 2,
-  "params_checksum": "407ff304435b3e9ff6c14a94f9017ee93dd5025956d2d9176f015c5a11e8deba",
+  "params_checksum": "4b51c12eafb13c6cbeb7f1534f771e4c43f410c5deb9eb0d032b51cba2aaeb07",
   "seed": 0,
   "seq_len": 32,
-  "step": 100,
-  "vocab_size": 2333
+  "step": 8000,
+  "vocab_size": 4201
 }

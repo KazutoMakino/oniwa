@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut infinite_mode = false;
     let mut seed = 0u64;
     let mut reset_mode = false;
-    let mut custom_prompt = "その時、".to_string();
+    let mut custom_prompts: Vec<String> = Vec::new();
     let mut gen_len = 30usize;
     let mut log_interval = 25usize;
     let mut run_name_arg: Option<String> = None;
@@ -67,7 +67,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--prompt" => {
                 if let Some(val) = args.get(i + 1) {
-                    custom_prompt = val.clone();
+                    custom_prompts.push(val.clone());
+                    i += 1;
+                }
+            }
+            "--prompts" => {
+                if let Some(val) = args.get(i + 1) {
+                    for p in val.split(',') {
+                        let trimmed = p.trim();
+                        if !trimmed.is_empty() {
+                            custom_prompts.push(trimmed.to_string());
+                        }
+                    }
                     i += 1;
                 }
             }
@@ -93,6 +104,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         i += 1;
     }
+
+    let default_prompts = vec![
+        "その時、".to_string(),
+        "メロスは、".to_string(),
+        "吾輩は、".to_string(),
+        "私は、".to_string(),
+    ];
+    let observation_prompts = if !custom_prompts.is_empty() {
+        custom_prompts
+    } else {
+        default_prompts
+    };
 
     // ---------------------------------------------------------
     // 1. データ準備（青空文庫コーパスのトークナイズ & 系譜記録）
@@ -276,11 +299,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 新規作成時はヘッダーを書き込む
     if reset_mode || !journal_md_path.exists() || journal_md.metadata()?.len() == 0 {
         use std::io::Write;
+        let prompts_display = observation_prompts.iter().map(|p| format!("「{}」", p)).collect::<Vec<_>>().join(" / ");
         writeln!(journal_md, "# 🌿 ONIWA 観葉植物・生育観察日記 (Growth Journal)")?;
         writeln!(journal_md, "> **「言葉は認知の影であり、コードは生命のDNAである」**  \n> モデルが完全な乱数ノイズ（Step 0）から言葉の芽を吹き、文脈を獲得していく変容の記録です。\n")?;
         writeln!(journal_md, "- **観察セッション**: `{}`", run_id)?;
-        writeln!(journal_md, "- **観察プロンプト**: 「{}」", custom_prompt)?;
-        writeln!(journal_md, "- **生成文字数**: {} 文字", gen_len)?;
+        writeln!(journal_md, "- **観察プロンプト群（巡回プローブ）**: {}", prompts_display)?;
+        writeln!(journal_md, "- **生成文字数**: 各 {} 文字", gen_len)?;
         writeln!(journal_md, "- **モデル規模**: {} layers, {} heads, dim {} (約 {:.1}K params)\n",
             config.num_layers, config.num_heads, config.dim, total_params as f32 / 1000.0)?;
         writeln!(journal_md, "| ステップ | 訓練損失 (Train) | 検証損失 (Val) | コア温度 / 電力 | 発達途中の生成文（言葉の芽吹き） |")?;
@@ -291,41 +315,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---------------------------------------------------------
     // 4. 学習前 / 再開時の生成テスト
     // ---------------------------------------------------------
-    println!("\n[4/4] 🚀 学習開始 & 発達プロセスの観測");
+    println!("\n[4/4] 🚀 学習開始 & 発達プロセスの観測（複数プローブ巡回）");
     println!("------------------------------------------------------------");
-    let prompt = custom_prompt.as_str();
 
     if start_step == 1 {
-        println!("【Step 0 (初期状態)】 プロンプト: 「{}」", prompt);
-        let sample_0 = generate_sample(&model, &tokenizer, prompt, gen_len, &mut rng);
         let val_0 = evaluate_validation_loss(&model, val_tokens, config.seq_len, 4, 4, &mut rng);
-        println!("  -> 生成文: 「{}」", sample_0);
-        println!("  -> 初期検証損失 (Val Loss): {:.4}", val_0);
+        println!("【Step 0 (初期状態)】 初期検証損失 (Val Loss): {:.4}", val_0);
+        let mut md_lines = Vec::new();
+        let mut sample_entries = Vec::new();
+
+        for p in &observation_prompts {
+            let s = generate_sample(&model, &tokenizer, p, gen_len, &mut rng);
+            println!("  - [{}] -> 「{}」", p, s);
+            let clean = s.replace('\n', " ").replace('|', "\\|");
+            md_lines.push(format!("**[{}]** `{}`", p, clean));
+            sample_entries.push(serde_json::json!({
+                "prompt": p,
+                "generated_text": s,
+            }));
+        }
         println!("  （※まだ何も学んでいないため、完全なランダム文字が出力されます）");
         println!("------------------------------------------------------------\n");
 
         use std::io::Write;
-        let clean_text = sample_0.replace('\n', " ").replace('|', "\\|");
-        writeln!(journal_md, "| **Step 0** | 6.6000 (初期乱数) | {:.4} | - | `{}` *(初期の産声)* |", val_0, clean_text)?;
+        let md_text = md_lines.join("<br>");
+        writeln!(journal_md, "| **Step 0** | 8.3400 (初期乱数) | {:.4} | - | {} *(初期の産声)* |", val_0, md_text)?;
         journal_md.flush()?;
 
         let json_entry = serde_json::json!({
             "step": 0,
-            "loss": 6.60,
+            "loss": 8.34,
             "val_loss": val_0,
-            "prompt": prompt,
-            "generated_text": sample_0,
+            "samples": sample_entries,
             "cpu_temp_c": null,
             "power_w": null,
         });
         writeln!(journal_jsonl, "{}", json_entry)?;
         journal_jsonl.flush()?;
     } else {
-        println!("【Step {} (チェックポイント復元状態)】 プロンプト: 「{}」", start_step - 1, prompt);
-        let sample_resumed = generate_sample(&model, &tokenizer, prompt, gen_len, &mut rng);
         let current_val = evaluate_validation_loss(&model, val_tokens, config.seq_len, 4, 4, &mut rng);
-        println!("  -> 現在の獲得言語: 「{}」", sample_resumed);
-        println!("  -> 現在の検証損失 (Val Loss): {:.4}", current_val);
+        println!("【Step {} (チェックポイント復元状態)】 現在の検証損失 (Val Loss): {:.4}", start_step - 1, current_val);
+        println!("  - 現在の獲得言語（各プローブ）:");
+        for p in &observation_prompts {
+            let s = generate_sample(&model, &tokenizer, p, gen_len, &mut rng);
+            println!("    [{}] -> 「{}」", p, s);
+        }
         println!("  （※保存されたチェックポイントの知能状態を引き継いでここから学習を継続します）");
         println!("------------------------------------------------------------\n");
     }
@@ -474,21 +508,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            // 途中経過の生成文 (Transformer 自己回帰生成)
-            let gen = generate_sample(&model, &tokenizer, prompt, gen_len, &mut rng);
-            println!("  🌱 発達途中の生成: 「{}」\n", gen);
+            // 途中経過の生成文 (複数プローブ巡回・自己回帰サンプリング生成)
+            println!("  🌱 発達途中の生成（複数プローブ巡回）:");
+            let mut md_lines = Vec::new();
+            let mut sample_entries = Vec::new();
+            for p in &observation_prompts {
+                let gen = generate_sample(&model, &tokenizer, p, gen_len, &mut rng);
+                println!("    - [{}] -> 「{}」", p, gen);
+                let clean = gen.replace('\n', " ").replace('|', "\\|");
+                md_lines.push(format!("**[{}]** `{}`", p, clean));
+                sample_entries.push(serde_json::json!({
+                    "prompt": p,
+                    "generated_text": gen,
+                }));
+            }
+            println!();
 
             // 観葉植物・生育観察日記 (Markdown / JSONL) へ追記
             {
                 use std::io::Write;
-                let clean_text = gen.replace('\n', " ").replace('|', "\\|");
+                let md_text = md_lines.join("<br>");
                 let temp_str = cpu_temp
                     .map(|t| format!("{:.1}℃", t))
                     .unwrap_or_else(|| "-".into());
                 writeln!(
                     journal_md,
-                    "| Step {:5} | {:.4} | {:.4} | {} / 純{:.1}W (総{:.1}W) | `{}` |",
-                    step, loss, val_loss_val, temp_str, reading.net_watts, reading.gross_watts, clean_text
+                    "| Step {:5} | {:.4} | {:.4} | {} / 純{:.1}W (総{:.1}W) | {} |",
+                    step, loss, val_loss_val, temp_str, reading.net_watts, reading.gross_watts, md_text
                 )?;
                 journal_md.flush()?;
 
@@ -497,8 +543,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "train_loss": loss,
                     "val_loss": val_loss_val,
                     "lr": lr,
-                    "prompt": prompt,
-                    "generated_text": gen,
+                    "samples": sample_entries,
                     "cpu_temp_c": cpu_temp,
                     "net_power_w": reading.net_watts,
                     "gross_power_w": reading.gross_watts,

@@ -4,16 +4,32 @@
 //! 厳格にフィルタリングし、サーバー負荷を防ぐエチケット（User-Agent、ウェイト、キャッシュ）
 //! を遵守して安全に取得・クレンジング・系譜台帳記録を行います。
 
+#![allow(dead_code)]
+
 use crate::cleaner::clean_aozora_text;
 use oniwa_lm::logger::{DataIngestionLog, ProvenanceEvent, ProvenanceLedger};
 use oniwa_lm::reproducibility::compute_checksum_bytes;
 use oniwa_lm::tokenizer::CharTokenizer;
+use serde::Deserialize;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
+
+/// レシピ設定ファイルの個別作品ターゲット
+#[derive(Debug, Deserialize, Clone)]
+pub struct RecipeWorkTarget {
+    pub author: String,
+    pub title: String,
+}
+
+/// レシピ設定ファイル全体の構成
+#[derive(Debug, Deserialize, Clone)]
+pub struct RecipeConfig {
+    pub curated_works: Vec<RecipeWorkTarget>,
+}
 
 /// 青空文庫の作品メタデータ
 #[allow(dead_code)]
@@ -198,28 +214,25 @@ impl AozoraPipeline {
         Ok(clean_dest)
     }
 
-    /// プリセット作品群（代表的な著作権満了の名作）を自動収集
-    pub fn ingest_presets(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-        let preset_targets = [
-            ("中島敦", "山月記"),
-            ("太宰治", "走れメロス"),
-            ("芥川竜之介", "羅生門"),
-            ("芥川竜之介", "蜘蛛の糸"),
-            ("宮沢賢治", "注文の多い料理店"),
-            ("宮沢賢治", "セロ弾きのゴーシュ"),
-            ("森鴎外", "高瀬舟"),
-            ("夏目漱石", "坊っちゃん"),
-        ];
+    /// レシピ設定ファイル（JSON）に基づいて作品群を一括収集
+    pub fn ingest_from_recipe<P: AsRef<Path>>(&self, recipe_path: P) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+        let recipe_p = recipe_path.as_ref();
+        if !recipe_p.exists() {
+            return Err(format!("レシピファイル {:?} が見つかりません。", recipe_p).into());
+        }
+
+        let recipe_str = fs::read_to_string(recipe_p)?;
+        let recipe: RecipeConfig = serde_json::from_str(&recipe_str)?;
 
         println!("============================================================");
-        println!(" 📚 青空文庫パブリックドメイン・プリセット作品の自動収集");
-        println!("    (対象: 著作権保護期間満了作品のみ / 全 {} 作品)", preset_targets.len());
+        println!(" 📚 青空文庫パブリックドメイン・レシピ駆動データ収集");
+        println!("    (設定ファイル: {:?} / 全 {} 作品)", recipe_p, recipe.curated_works.len());
         println!("============================================================");
 
         let mut paths = Vec::new();
-        for (author, title) in preset_targets {
-            println!("▶ 『{}』（著: {}）", title, author);
-            if let Some(entry) = self.find_work_in_index(author, title)? {
+        for target in &recipe.curated_works {
+            println!("▶ 『{}』（著: {}）", target.title, target.author);
+            if let Some(entry) = self.find_work_in_index(&target.author, &target.title)? {
                 let path = self.ingest_single_work(
                     &entry.author_full(),
                     &entry.title,
@@ -229,11 +242,54 @@ impl AozoraPipeline {
                 )?;
                 paths.push(path);
             } else {
-                eprintln!("  ⚠️ 『{}』（{}）が公式インデックスで見つかりませんでした", title, author);
+                eprintln!("  ⚠️ 『{}』（{}）が公式インデックスで見つかりませんでした", target.title, target.author);
             }
         }
 
         Ok(paths)
+    }
+
+    /// プリセット作品群（デフォルトレシピから自動収集）
+    pub fn ingest_presets(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+        let default_recipe = Path::new(env!("CARGO_MANIFEST_DIR")).join("config").join("recipes.json");
+        if default_recipe.exists() {
+            self.ingest_from_recipe(&default_recipe)
+        } else {
+            let preset_targets = [
+                ("中島敦", "山月記"),
+                ("太宰治", "走れメロス"),
+                ("芥川竜之介", "羅生門"),
+                ("芥川竜之介", "蜘蛛の糸"),
+                ("宮沢賢治", "注文の多い料理店"),
+                ("宮沢賢治", "セロ弾きのゴーシュ"),
+                ("森鴎外", "高瀬舟"),
+                ("夏目漱石", "坊っちゃん"),
+            ];
+
+            println!("============================================================");
+            println!(" 📚 青空文庫パブリックドメイン・プリセット作品の自動収集 (フォールバック)");
+            println!("    (対象: 著作権保護期間満了作品のみ / 全 {} 作品)", preset_targets.len());
+            println!("============================================================");
+
+            let mut paths = Vec::new();
+            for (author, title) in preset_targets {
+                println!("▶ 『{}』（著: {}）", title, author);
+                if let Some(entry) = self.find_work_in_index(author, title)? {
+                    let path = self.ingest_single_work(
+                        &entry.author_full(),
+                        &entry.title,
+                        &entry.text_zip_url,
+                        &entry.card_url,
+                        "Public Domain (青空文庫 著作権満了)",
+                    )?;
+                    paths.push(path);
+                } else {
+                    eprintln!("  ⚠️ 『{}』（{}）が公式インデックスで見つかりませんでした", title, author);
+                }
+            }
+
+            Ok(paths)
+        }
     }
 
     /// 公式インデックスCSVから作品を検索

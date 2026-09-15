@@ -25,6 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: Vec<String> = std::env::args().collect();
     let mut do_preset = false;
+    let mut target_recipe: Option<String> = None;
     let mut target_author: Option<String> = None;
     let mut limit = 5usize;
     let mut do_build = false;
@@ -35,6 +36,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
+            "--recipe" => {
+                if let Some(val) = args.get(i + 1) {
+                    target_recipe = Some(val.clone());
+                    i += 1;
+                }
+            }
             "--preset" => {
                 do_preset = true;
             }
@@ -71,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         i += 1;
     }
 
-    if !do_preset && target_author.is_none() && !do_build && !do_status && !do_clean {
+    if !do_preset && target_recipe.is_none() && target_author.is_none() && !do_build && !do_status && !do_clean {
         print_help();
         return Ok(());
     }
@@ -85,8 +92,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pipeline.clean_all()?;
     }
 
-    // 1. プリセット作品群の取得
-    if do_preset {
+    // 1. レシピまたはプリセット作品群の取得
+    if let Some(ref recipe_path) = target_recipe {
+        pipeline.ingest_from_recipe(recipe_path)?;
+    } else if do_preset {
         pipeline.ingest_presets()?;
     }
 
@@ -96,12 +105,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 3. 統合コーパスの再生成
-    if do_build || do_preset {
+    if do_build || do_preset || target_recipe.is_some() {
         pipeline.build_combined_corpus()?;
     }
 
     // 4. ステータス表示
-    if do_status || (!do_preset && !do_build) {
+    if do_status || (!do_preset && target_recipe.is_none() && !do_build) {
         show_status(&data_dir, &logs_dir)?;
     }
 
@@ -117,7 +126,8 @@ fn print_help() {
     println!("【使い方】");
     println!("  cargo run --release -p oniwa-pipeline -- [オプション]\n");
     println!("【オプション】");
-    println!("  --preset            代表的な名作（太宰治、芥川龍之介、中島敦、宮沢賢治、夏目漱石、森鴎外など）を一括取得");
+    println!("  --recipe <パス>     JSONレシピファイルに基づいて指定作品群を一括取得（例: pipelines/config/recipes.json）");
+    println!("  --preset            代表的な名作（レシピ設定、またはフォールバック名作群）を一括取得");
     println!("  --author <名前>     指定した著者の著作権満了作品を青空文庫全作品リストから検索して取得");
     println!("  --limit <数>        著者検索時の取得上限作品数 (デフォルト: 5)");
     println!("  --build             収集済みテキストを統合して tokens.bin & vocab.json を生成");
@@ -125,8 +135,8 @@ fn print_help() {
     println!("  --clean             収集データ・コーパス・台帳を初期化（既存台帳はバックアップ）");
     println!("  --status            現在収集されている作品一覧と系譜台帳の状況を表示\n");
     println!("【使用例】");
-    println!("  $ cargo run --release -p oniwa-pipeline -- --preset");
-    println!("  $ cargo run --release -p oniwa-pipeline -- --author \"夏目漱石\" --limit 3 --build");
+    println!("  $ cargo run --release -p oniwa-pipeline -- --recipe pipelines/config/recipes.json --build");
+    println!("  $ cargo run --release -p oniwa-pipeline -- --author \"夏目漱石\" --limit 5 --build");
     println!("  $ cargo run --release -p oniwa-pipeline -- --clean --preset --build");
     println!("  $ cargo run --release -p oniwa-pipeline -- --status");
 }
