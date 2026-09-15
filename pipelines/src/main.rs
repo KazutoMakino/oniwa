@@ -6,14 +6,20 @@
 
 mod aozora;
 mod cleaner;
+mod egov;
+mod arxiv;
+mod techdocs;
 
 use aozora::AozoraPipeline;
+use egov::EgovPipeline;
+use arxiv::ArxivPipeline;
+use techdocs::TechDocsPipeline;
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
-    println!(" 📚 ONIWA: 青空文庫パブリックドメイン・データ収集パイプライン");
-    println!("    (脱データセンター・無断搾取なきオーガニック知性)");
+    println!(" 📚 ONIWA: クリーン・オープンデータ収集パイプライン");
+    println!("    (青空文庫PD ＆ e-Gov法令 ＆ arXivオープンサイエンス ＆ 公式技術仕様)");
     println!("============================================================\n");
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -21,10 +27,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_dir = root_dir.join("data");
     let logs_dir = root_dir.join("logs");
 
-    let mut pipeline = AozoraPipeline::new(&data_dir, &logs_dir);
+    let mut aozora_pipeline = AozoraPipeline::new(&data_dir, &logs_dir);
+    let mut egov_pipeline = EgovPipeline::new(&data_dir, &logs_dir);
+    let mut arxiv_pipeline = ArxivPipeline::new(&data_dir, &logs_dir);
+    let mut techdocs_pipeline = TechDocsPipeline::new(&data_dir, &logs_dir);
 
     let args: Vec<String> = std::env::args().collect();
     let mut do_preset = false;
+    let mut do_laws = false;
+    let mut do_arxiv = false;
+    let mut do_techdocs = false;
+    let mut arxiv_limit = 10usize;
+    let mut arxiv_cat = "cs.AI".to_string();
+    let mut do_all = false;
     let mut target_recipe: Option<String> = None;
     let mut target_author: Option<String> = None;
     let mut limit = 5usize;
@@ -44,6 +59,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--preset" => {
                 do_preset = true;
+            }
+            "--laws" => {
+                do_laws = true;
+            }
+            "--arxiv" => {
+                do_arxiv = true;
+                if let Some(val) = args.get(i + 1) {
+                    if let Ok(num) = val.parse::<usize>() {
+                        arxiv_limit = num;
+                        i += 1;
+                    }
+                }
+            }
+            "--arxiv-cat" => {
+                if let Some(val) = args.get(i + 1) {
+                    arxiv_cat = val.clone();
+                    i += 1;
+                }
+            }
+            "--techdocs" => {
+                do_techdocs = true;
+            }
+            "--all" => {
+                do_all = true;
+                do_preset = true;
+                do_laws = true;
+                do_techdocs = true;
+                do_arxiv = true;
+                arxiv_limit = 5;
+                do_build = true;
             }
             "--author" => {
                 if let Some(val) = args.get(i + 1) {
@@ -78,39 +123,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         i += 1;
     }
 
-    if !do_preset && target_recipe.is_none() && target_author.is_none() && !do_build && !do_status && !do_clean {
+    if !do_preset && !do_laws && !do_arxiv && !do_techdocs && !do_all && target_recipe.is_none() && target_author.is_none() && !do_build && !do_status && !do_clean {
         print_help();
         return Ok(());
     }
 
     if do_force {
-        pipeline.set_force(true);
+        aozora_pipeline.set_force(true);
+        egov_pipeline.set_force(true);
+        arxiv_pipeline.set_force(true);
+        techdocs_pipeline.set_force(true);
     }
 
     // 0. クリーン・リセット処理
     if do_clean {
-        pipeline.clean_all()?;
+        aozora_pipeline.clean_all()?;
     }
 
-    // 1. レシピまたはプリセット作品群の取得
+    // 1. 青空文庫: レシピまたはプリセット作品群の取得
     if let Some(ref recipe_path) = target_recipe {
-        pipeline.ingest_from_recipe(recipe_path)?;
+        aozora_pipeline.ingest_from_recipe(recipe_path)?;
     } else if do_preset {
-        pipeline.ingest_presets()?;
+        aozora_pipeline.ingest_presets()?;
     }
 
-    // 2. 指定著者の作品収集
+    // 2. 青空文庫: 指定著者の作品収集
     if let Some(author) = target_author {
-        pipeline.search_and_ingest_by_author(&author, limit)?;
+        aozora_pipeline.search_and_ingest_by_author(&author, limit)?;
     }
 
-    // 3. 統合コーパスの再生成
-    if do_build || do_preset || target_recipe.is_some() {
-        pipeline.build_combined_corpus()?;
+    // 3. e-Gov: 基本法令オープンデータの取得
+    if do_laws {
+        egov_pipeline.ingest_default_laws()?;
     }
 
-    // 4. ステータス表示
-    if do_status || (!do_preset && target_recipe.is_none() && !do_build) {
+    // 4. 公式技術ドキュメント・コード仕様の取得
+    if do_techdocs {
+        techdocs_pipeline.ingest_default_techdocs()?;
+    }
+
+    // 5. arXiv: オープンサイエンス論文アブストラクトの取得
+    if do_arxiv {
+        arxiv_pipeline.ingest_category(&arxiv_cat, arxiv_limit)?;
+    }
+
+    // 6. 統合コーパスの再生成 (全ソースの corpus/*.txt を一括結合)
+    if do_build || do_preset || do_laws || do_techdocs || do_arxiv || do_all || target_recipe.is_some() {
+        aozora_pipeline.build_combined_corpus()?;
+    }
+
+    // 7. ステータス表示
+    if do_status || (!do_preset && !do_laws && !do_techdocs && !do_arxiv && !do_all && target_recipe.is_none() && !do_build) {
         show_status(&data_dir, &logs_dir)?;
     }
 
@@ -126,18 +189,24 @@ fn print_help() {
     println!("【使い方】");
     println!("  cargo run --release -p oniwa-pipeline -- [オプション]\n");
     println!("【オプション】");
+    println!("  --all               全ソース（青空文庫＋法令＋技術ドキュメント＋arXiv）を一括取得し、統合コーパスを再生成");
+    println!("  --preset            青空文庫の代表的な名作群（recipes.json 設定作品群）を一括取得");
+    println!("  --laws              e-Gov APIから日本国憲法・刑法・著作権法・民法等の基本法令を一括取得");
+    println!("  --techdocs          公式オープンソース技術ドキュメント（Rust公式解説・コード実例等）を一括取得");
+    println!("  --arxiv [件数]      arXiv APIから人工知能・自然言語処理等のオープンアクセス論文要約を取得 (デフォルト: 10)");
+    println!("  --arxiv-cat <分野>  arXiv検索カテゴリ指定 (例: cs.AI, cs.CL, cs.LG / デフォルト: cs.AI)");
     println!("  --recipe <パス>     JSONレシピファイルに基づいて指定作品群を一括取得（例: pipelines/config/recipes.json）");
-    println!("  --preset            代表的な名作（レシピ設定、またはフォールバック名作群）を一括取得");
     println!("  --author <名前>     指定した著者の著作権満了作品を青空文庫全作品リストから検索して取得");
     println!("  --limit <数>        著者検索時の取得上限作品数 (デフォルト: 5)");
-    println!("  --build             収集済みテキストを統合して tokens.bin & vocab.json を生成");
+    println!("  --build             収集済みテキスト群を統合して tokens.bin & vocab.json を生成");
     println!("  --force             キャッシュを無視して強制的に再ダウンロード & 再解析");
     println!("  --clean             収集データ・コーパス・台帳を初期化（既存台帳はバックアップ）");
-    println!("  --status            現在収集されている作品一覧と系譜台帳の状況を表示\n");
+    println!("  --status            現在収集されている作品・法令・論文一覧と系譜台帳の状況を表示\n");
     println!("【使用例】");
-    println!("  $ cargo run --release -p oniwa-pipeline -- --recipe pipelines/config/recipes.json --build");
-    println!("  $ cargo run --release -p oniwa-pipeline -- --author \"夏目漱石\" --limit 5 --build");
-    println!("  $ cargo run --release -p oniwa-pipeline -- --clean --preset --build");
+    println!("  $ cargo run --release -p oniwa-pipeline -- --all");
+    println!("  $ cargo run --release -p oniwa-pipeline -- --techdocs");
+    println!("  $ cargo run --release -p oniwa-pipeline -- --arxiv 10");
+    println!("  $ cargo run --release -p oniwa-pipeline -- --laws");
     println!("  $ cargo run --release -p oniwa-pipeline -- --status");
 }
 
