@@ -43,12 +43,15 @@ venv/
 crates/oniwa-lm/data/*
 !crates/oniwa-lm/data/.gitkeep
 
-# Model weights binaries (large generated artifacts)
-**/checkpoints/**/weights.bin
-checkpoints/**/weights.bin
-crates/oniwa-lm/checkpoints/**/weights.bin
+# Model weights binaries and checkpoints (large generated artifacts)
+**/checkpoints/*
+!**/checkpoints/**/.gitkeep
 
 # Detailed step-by-step training logs (keep root growth_journal.md and ledger)
 /logs/runs/
 **/logs/runs/**
+
+# Terminal and session log files
+*.log
+train.log
 
