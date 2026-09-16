@@ -14,9 +14,15 @@ use std::path::Path;
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let git_commit = oniwa_lm::logger::get_git_commit_hash();
+    let git_short = oniwa_lm::logger::get_git_short_hash();
+    let git_dirty = oniwa_lm::logger::get_git_dirty();
+    let dirty_str = if git_dirty { " (dirty / 未コミット変更あり)" } else { " (clean)" };
+
     println!("============================================================");
     println!(" 🪨 ONIWA: Organic Non-datacenter Intelligence Without Abuse");
     println!("    (脱データセンター・無断搾取なきオーガニック知性: oniwa-lm)");
+    println!("    Git Commit: {}{}", git_short, dirty_str);
     println!("============================================================\n");
 
     let base_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -250,6 +256,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest = TrainingManifest {
         project_name: "oniwa-lm".into(),
         version: "0.1.0".into(),
+        git_commit_hash: git_commit.clone(),
+        git_dirty,
         timestamp_utc: current_time_iso,
         random_seed: seed,
         model_config: ModelConfigInfo {
@@ -303,6 +311,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         writeln!(journal_md, "# 🌿 ONIWA 観葉植物・生育観察日記 (Growth Journal)")?;
         writeln!(journal_md, "> **「言葉は認知の影であり、コードは生命のDNAである」**  \n> モデルが完全な乱数ノイズ（Step 0）から言葉の芽を吹き、文脈を獲得していく変容の記録です。\n")?;
         writeln!(journal_md, "- **観察セッション**: `{}`", run_id)?;
+        writeln!(journal_md, "- **実行Gitコミット**: `{}`{}", git_short, dirty_str)?;
         writeln!(journal_md, "- **観察プロンプト群（巡回プローブ）**: {}", prompts_display)?;
         writeln!(journal_md, "- **生成文字数**: 各 {} 文字", gen_len)?;
         writeln!(journal_md, "- **モデル規模**: {} layers, {} heads, dim {} (約 {:.1}K params)\n",

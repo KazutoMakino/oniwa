@@ -47,6 +47,9 @@ pub struct DataIngestionLog {
 pub struct TrainingManifest {
     pub project_name: String,
     pub version: String,
+    pub git_commit_hash: String,
+    #[serde(default)]
+    pub git_dirty: bool,
     pub timestamp_utc: String,
     pub random_seed: u64,
     pub model_config: ModelConfigInfo,
@@ -184,6 +187,56 @@ pub fn current_timestamp_utc() -> String {
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
         year, month, day, hour, min, sec
     )
+}
+
+/// ビルド時または実行時フォールバックによる Git コミットハッシュの取得 (完全40桁)
+pub fn get_git_commit_hash() -> String {
+    // 1. build.rs によるコンパイル時環境変数を優先
+    if let Some(h) = option_env!("ONIWA_GIT_HASH") {
+        if h != "unknown" && !h.is_empty() {
+            return h.to_string();
+        }
+    }
+    // 2. 実行時コマンドフォールバック
+    std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|out| {
+            if out.status.success() {
+                String::from_utf8(out.stdout).ok().map(|s| s.trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// 短縮 Git コミットハッシュ (7桁)
+pub fn get_git_short_hash() -> String {
+    let full = get_git_commit_hash();
+    if full.len() >= 7 {
+        full[..7].to_string()
+    } else {
+        full
+    }
+}
+
+/// Git 作業ツリーの変更有無 (dirty) の判定
+pub fn get_git_dirty() -> bool {
+    if let Some(d) = option_env!("ONIWA_GIT_DIRTY") {
+        if d == "true" {
+            return true;
+        } else if d == "false" {
+            return false;
+        }
+    }
+    std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .ok()
+        .map(|out| out.status.success() && !out.stdout.is_empty())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

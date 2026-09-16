@@ -217,6 +217,8 @@ impl ModelWeights {
             "num_layers": self.config.num_layers,
             "seq_len": self.config.seq_len,
             "params_checksum": crate::reproducibility::compute_checksum_f32(&self.params),
+            "git_commit_hash": crate::logger::get_git_commit_hash(),
+            "git_dirty": crate::logger::get_git_dirty(),
         });
         std::fs::write(dir_p.join("meta.json"), serde_json::to_string_pretty(&meta)?)?;
 
