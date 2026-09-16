@@ -31,6 +31,7 @@ impl SwiGLU {
     /// - `inp`: [N, C]
     /// - `w_gate_up`: [C, 2 * FFN] (前半がgate, 後半がup)
     /// - `w_down`: [FFN, C]
+    #[allow(clippy::too_many_arguments)]
     pub fn forward(
         out: &mut [f32],
         act_g: &mut [f32],
@@ -49,10 +50,10 @@ impl SwiGLU {
             for j in 0..ffn {
                 let mut dot_g = 0.0f32;
                 let mut dot_u = 0.0f32;
-                for k in 0..c {
+                for (k, &x_k) in x_row.iter().enumerate() {
                     let w_offset = k * (2 * ffn);
-                    dot_g += x_row[k] * w_gate_up[w_offset + j];
-                    dot_u += x_row[k] * w_gate_up[w_offset + ffn + j];
+                    dot_g += x_k * w_gate_up[w_offset + j];
+                    dot_u += x_k * w_gate_up[w_offset + ffn + j];
                 }
                 act_g[i * ffn + j] = dot_g;
                 act_u[i * ffn + j] = dot_u;
@@ -75,6 +76,7 @@ impl SwiGLU {
     }
 
     /// 逆伝播
+    #[allow(clippy::too_many_arguments)]
     pub fn backward(
         dinp: &mut [f32],
         dw_gate_up: &mut [f32],

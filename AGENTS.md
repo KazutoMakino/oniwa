@@ -94,3 +94,6 @@ git fetch --prune
 3. **テストの保守**:
    - 新機能追加時は、必ず対応するユニットテスト（数学的勾配チェック、構文スコア検証など）を同梱すること。
    - `cargo test --workspace` が常に 100% グリーンであることを維持すること。
+4. **コードフォーマットと静的解析 (Git Hook)**:
+   - コミット時に自動で `cargo fmt --all` による整形と再ステージング、および `cargo clippy --workspace --all-targets -- -D warnings` による静的検証が `.githooks/pre-commit` により実行される。
+   - エージェント作業環境でも `git config core.hooksPath .githooks` を設定してフックを活用すること。

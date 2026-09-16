@@ -39,6 +39,7 @@ impl CausalSelfAttention {
     }
 
     /// 順伝播
+    #[allow(clippy::too_many_arguments)]
     pub fn forward(
         out: &mut [f32],
         act_q: &mut [f32],
@@ -65,11 +66,11 @@ impl CausalSelfAttention {
                 let mut dot_q = 0.0f32;
                 let mut dot_k = 0.0f32;
                 let mut dot_v = 0.0f32;
-                for k in 0..c {
+                for (k, &x_k) in x_row.iter().enumerate() {
                     let w_offset = k * (3 * c);
-                    dot_q += x_row[k] * w_qkv[w_offset + j];
-                    dot_k += x_row[k] * w_qkv[w_offset + c + j];
-                    dot_v += x_row[k] * w_qkv[w_offset + 2 * c + j];
+                    dot_q += x_k * w_qkv[w_offset + j];
+                    dot_k += x_k * w_qkv[w_offset + c + j];
+                    dot_v += x_k * w_qkv[w_offset + 2 * c + j];
                 }
                 act_q[i * c + j] = dot_q;
                 act_k[i * c + j] = dot_k;
@@ -152,6 +153,7 @@ impl CausalSelfAttention {
     }
 
     /// 逆伝播
+    #[allow(clippy::too_many_arguments)]
     pub fn backward(
         dinp: &mut [f32],
         dw_qkv: &mut [f32],
@@ -213,14 +215,14 @@ impl CausalSelfAttention {
 
                     // dA_ij = d_out_i * V_j
                     let mut da = vec![0.0f32; i + 1];
-                    for j in 0..=i {
+                    for (j, da_j) in da.iter_mut().enumerate().take(i + 1) {
                         let v_offset = ((bi * t + j) * nh + hi) * d_h;
                         let v_vec = &act_v[v_offset..v_offset + d_h];
                         let mut dot = 0.0f32;
                         for d in 0..d_h {
                             dot += d_out_vec[d] * v_vec[d];
                         }
-                        da[j] = dot;
+                        *da_j = dot;
                     }
 
                     // Softmax backward: dS = A * (dA - sum(dA * A))

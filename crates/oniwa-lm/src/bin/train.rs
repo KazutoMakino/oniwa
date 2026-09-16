@@ -538,7 +538,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if let Some(add) = add_steps_arg {
         (start_step - 1) + add
     } else if let Some(steps) = num_steps_arg {
-        if steps <= start_step - 1 {
+        if steps < start_step {
             println!("  💡 指定された --steps ({}) が現在の完了ステップ ({}) 以下のため、追加で {} ステップ学習します（目標: Step {}）",
                 steps, start_step - 1, steps, (start_step - 1) + steps);
             (start_step - 1) + steps

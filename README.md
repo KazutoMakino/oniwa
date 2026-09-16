@@ -71,6 +71,12 @@ oniwa/
 
 ## クイックスタート
 
+### 0. 開発環境のセットアップ (Git Hook の有効化)
+コミット時の自動コードフォーマット（`cargo fmt`）および Clippy による静的解析（`cargo clippy`）を行う Git フックが `.githooks` に同梱されています。クローン後に一度だけ以下を実行して有効化してください：
+```bash
+git config core.hooksPath .githooks
+```
+
 ### 1. ビルド & テスト
 ```bash
 cargo check --workspace

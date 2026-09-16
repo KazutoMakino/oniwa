@@ -94,34 +94,34 @@ impl ThermalController {
                 if let Ok(files) = fs::read_dir(&dir) {
                     for file in files.filter_map(|e| e.ok().map(|e| e.path())) {
                         let fname = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                        if fname.starts_with("temp") && fname.ends_with("_input") {
-                            if Self::read_temp_from_path(&file).is_some() {
-                                let label_file = dir.join(fname.replace("_input", "_label"));
-                                let label = fs::read_to_string(&label_file)
-                                    .unwrap_or_default()
-                                    .trim()
-                                    .to_string();
+                        if fname.starts_with("temp")
+                            && fname.ends_with("_input")
+                            && Self::read_temp_from_path(&file).is_some()
+                        {
+                            let label_file = dir.join(fname.replace("_input", "_label"));
+                            let label = fs::read_to_string(&label_file)
+                                .unwrap_or_default()
+                                .trim()
+                                .to_string();
 
-                                let desc = if !label.is_empty() {
-                                    format!("{} ({})", name, label)
-                                } else {
-                                    name.clone()
-                                };
+                            let desc = if !label.is_empty() {
+                                format!("{} ({})", name, label)
+                            } else {
+                                name.clone()
+                            };
 
-                                // 最優先: AMD k10temp / Intel coretemp / Zenpower
-                                if name == "k10temp" || name == "coretemp" || name == "zenpower" {
-                                    if label == "Tctl"
-                                        || label == "Package id 0"
-                                        || label.contains("CPU")
-                                        || label.is_empty()
-                                    {
-                                        return (Some(file), Some(desc));
-                                    }
-                                }
+                            // 最優先: AMD k10temp / Intel coretemp / Zenpower
+                            if (name == "k10temp" || name == "coretemp" || name == "zenpower")
+                                && (label == "Tctl"
+                                    || label == "Package id 0"
+                                    || label.contains("CPU")
+                                    || label.is_empty())
+                            {
+                                return (Some(file), Some(desc));
+                            }
 
-                                if fallback_hwmon.is_none() && !name.is_empty() {
-                                    fallback_hwmon = Some((file, desc));
-                                }
+                            if fallback_hwmon.is_none() && !name.is_empty() {
+                                fallback_hwmon = Some((file, desc));
                             }
                         }
                     }
@@ -136,7 +136,7 @@ impl ThermalController {
                 .filter(|p| {
                     p.file_name()
                         .and_then(|n| n.to_str())
-                        .map_or(false, |s| s.starts_with("thermal_zone"))
+                        .is_some_and(|s| s.starts_with("thermal_zone"))
                 })
                 .collect();
             tz_dirs.sort();
