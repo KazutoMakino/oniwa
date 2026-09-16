@@ -15,6 +15,7 @@
 //! - Zero-dependency Character Tokenizer (`tokenizer`)
 //! - Minimal Transformer Model & Flat Buffer Layout (`model`)
 
+pub mod benchmark;
 pub mod layers;
 pub mod logger;
 pub mod model;

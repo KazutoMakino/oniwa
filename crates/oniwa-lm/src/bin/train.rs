@@ -3,6 +3,7 @@
 //! ONIWA: Organic Non-datacenter Intelligence Without Abuse
 //! （脱データセンター・無断搾取なきオーガニック知性）
 
+use oniwa_lm::benchmark::run_benchmark;
 use oniwa_lm::logger::{ModelConfigInfo, TrainingManifest, TrainingStepLog};
 use oniwa_lm::model::{ModelConfig, ModelWeights};
 use oniwa_lm::power::PowerTracker;
@@ -304,10 +305,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .append(true)
         .open(&journal_jsonl_path)?;
 
-    // 新規作成時はヘッダーを書き込む
-    if reset_mode || !journal_md_path.exists() || journal_md.metadata()?.len() == 0 {
+    // 新規作成時はヘッダーを書き込む（または「知能ベンチ」列のない既存ヘッダーを更新）
+    let prompts_display = observation_prompts.iter().map(|p| format!("「{}」", p)).collect::<Vec<_>>().join(" / ");
+    let should_write_header = reset_mode || !journal_md_path.exists() || journal_md.metadata()?.len() == 0;
+    if should_write_header {
         use std::io::Write;
-        let prompts_display = observation_prompts.iter().map(|p| format!("「{}」", p)).collect::<Vec<_>>().join(" / ");
         writeln!(journal_md, "# 🌿 ONIWA 観葉植物・生育観察日記 (Growth Journal)")?;
         writeln!(journal_md, "> **「言葉は認知の影であり、コードは生命のDNAである」**  \n> モデルが完全な乱数ノイズ（Step 0）から言葉の芽を吹き、文脈を獲得していく変容の記録です。\n")?;
         writeln!(journal_md, "- **観察セッション**: `{}`", run_id)?;
@@ -316,9 +318,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         writeln!(journal_md, "- **生成文字数**: 各 {} 文字", gen_len)?;
         writeln!(journal_md, "- **モデル規模**: {} layers, {} heads, dim {} (約 {:.1}K params)\n",
             config.num_layers, config.num_heads, config.dim, total_params as f32 / 1000.0)?;
-        writeln!(journal_md, "| ステップ | 訓練損失 (Train) | 検証損失 (Val) | コア温度 / 電力 | 発達途中の生成文（言葉の芽吹き） |")?;
-        writeln!(journal_md, "| :---: | :---: | :---: | :---: | :--- |")?;
+        writeln!(journal_md, "| ステップ | 訓練損失 (Train) | 検証損失 (Val) | 知能ベンチ (Top-5 / クイズ / 構文) | コア温度 / 電力 | 発達途中の生成文（言葉の芽吹き） |")?;
+        writeln!(journal_md, "| :---: | :---: | :---: | :---: | :---: | :--- |")?;
         journal_md.flush()?;
+    } else {
+        let existing = fs::read_to_string(&journal_md_path).unwrap_or_default();
+        if !existing.contains("知能ベンチ") {
+            let mut file = fs::File::create(&journal_md_path)?;
+            use std::io::Write;
+            writeln!(file, "# 🌿 ONIWA 観葉植物・生育観察日記 (Growth Journal)")?;
+            writeln!(file, "> **「言葉は認知の影であり、コードは生命のDNAである」**  \n> モデルが完全な乱数ノイズ（Step 0）から言葉の芽を吹き、文脈を獲得していく変容の記録です。\n")?;
+            writeln!(file, "- **観察セッション**: `{}`", run_id)?;
+            writeln!(file, "- **実行Gitコミット**: `{}`{}", git_short, dirty_str)?;
+            writeln!(file, "- **観察プロンプト群（巡回プローブ）**: {}", prompts_display)?;
+            writeln!(file, "- **生成文字数**: 各 {} 文字", gen_len)?;
+            writeln!(file, "- **モデル規模**: {} layers, {} heads, dim {} (約 {:.1}K params)\n",
+                config.num_layers, config.num_heads, config.dim, total_params as f32 / 1000.0)?;
+            writeln!(file, "| ステップ | 訓練損失 (Train) | 検証損失 (Val) | 知能ベンチ (Top-5 / クイズ / 構文) | コア温度 / 電力 | 発達途中の生成文（言葉の芽吹き） |")?;
+            writeln!(file, "| :---: | :---: | :---: | :---: | :---: | :--- |")?;
+            file.flush()?;
+        }
     }
 
     // ---------------------------------------------------------
@@ -328,10 +347,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("------------------------------------------------------------");
 
     if start_step == 1 {
-        let val_0 = evaluate_validation_loss(&model, val_tokens, config.seq_len, 4, 4, &mut rng);
-        println!("【Step 0 (初期状態)】 初期検証損失 (Val Loss): {:.4}", val_0);
         let mut md_lines = Vec::new();
         let mut sample_entries = Vec::new();
+        let mut raw_samples = Vec::new();
 
         for p in &observation_prompts {
             let s = generate_sample(&model, &tokenizer, p, gen_len, &mut rng);
@@ -340,21 +358,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             md_lines.push(format!("**[{}]** `{}`", p, clean));
             sample_entries.push(serde_json::json!({
                 "prompt": p,
-                "generated_text": s,
+                "generated_text": s.clone(),
             }));
+            raw_samples.push(s);
         }
+
+        let (val_0, bench_0) = run_benchmark(
+            &model,
+            &tokenizer,
+            val_tokens,
+            &raw_samples,
+            4,
+            4,
+            &mut rng,
+        );
+        println!("【Step 0 (初期状態)】 初期検証損失 (Val Loss): {:.4}", val_0);
+        println!("  🧠 初期知能ベンチ: {}", bench_0.summary_line());
         println!("  （※まだ何も学んでいないため、完全なランダム文字が出力されます）");
         println!("------------------------------------------------------------\n");
 
         use std::io::Write;
         let md_text = md_lines.join("<br>");
-        writeln!(journal_md, "| **Step 0** | 8.3400 (初期乱数) | {:.4} | - | {} *(初期の産声)* |", val_0, md_text)?;
+        writeln!(
+            journal_md,
+            "| **Step 0** | 8.3400 (初期乱数) | {:.4} | {} | - | {} *(初期の産声)* |",
+            val_0,
+            bench_0.short_display(),
+            md_text
+        )?;
         journal_md.flush()?;
 
         let json_entry = serde_json::json!({
             "step": 0,
             "loss": 8.34,
             "val_loss": val_0,
+            "benchmark": {
+                "top5_accuracy": bench_0.top5_accuracy,
+                "cloze_top1_accuracy": bench_0.cloze_top1_accuracy,
+                "cloze_top5_accuracy": bench_0.cloze_top5_accuracy,
+                "syntactic_score": bench_0.syntactic_score,
+                "bracket_score": bench_0.bracket_score,
+                "non_repetition_score": bench_0.non_repetition_score,
+            },
             "samples": sample_entries,
             "cpu_temp_c": null,
             "power_w": null,
@@ -362,13 +407,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         writeln!(journal_jsonl, "{}", json_entry)?;
         journal_jsonl.flush()?;
     } else {
-        let current_val = evaluate_validation_loss(&model, val_tokens, config.seq_len, 4, 4, &mut rng);
-        println!("【Step {} (チェックポイント復元状態)】 現在の検証損失 (Val Loss): {:.4}", start_step - 1, current_val);
+        let mut raw_samples = Vec::new();
+        println!("【Step {} (チェックポイント復元状態)】", start_step - 1);
         println!("  - 現在の獲得言語（各プローブ）:");
         for p in &observation_prompts {
             let s = generate_sample(&model, &tokenizer, p, gen_len, &mut rng);
             println!("    [{}] -> 「{}」", p, s);
+            raw_samples.push(s);
         }
+        let (current_val, bench_cur) = run_benchmark(
+            &model,
+            &tokenizer,
+            val_tokens,
+            &raw_samples,
+            4,
+            4,
+            &mut rng,
+        );
+        println!("  - 現在の検証損失 (Val Loss): {:.4}", current_val);
+        println!("  🧠 現在の知能ベンチ: {}", bench_cur.summary_line());
         println!("  （※保存されたチェックポイントの知能状態を引き継いでここから学習を継続します）");
         println!("------------------------------------------------------------\n");
     }
@@ -454,11 +511,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reading = power_tracker.tick(calc_time_ms, throttle_ms);
 
         let is_eval_step = step % log_interval == 0 || (!infinite_mode && step == target_steps);
-        let val_loss_opt = if is_eval_step {
-            let vl = evaluate_validation_loss(&model, val_tokens, config.seq_len, batch_size, 4, &mut rng);
-            Some(vl)
+        let (val_loss_opt, benchmark_opt, raw_samples, md_lines, sample_entries) = if is_eval_step {
+            let mut samples = Vec::with_capacity(observation_prompts.len());
+            let mut md_l = Vec::with_capacity(observation_prompts.len());
+            let mut s_entries = Vec::with_capacity(observation_prompts.len());
+
+            for p in &observation_prompts {
+                let gen = generate_sample(&model, &tokenizer, p, gen_len, &mut rng);
+                let clean = gen.replace('\n', " ").replace('|', "\\|");
+                md_l.push(format!("**[{}]** `{}`", p, clean));
+                s_entries.push(serde_json::json!({
+                    "prompt": p,
+                    "generated_text": gen.clone(),
+                }));
+                samples.push(gen);
+            }
+
+            let (vl, bench) = run_benchmark(
+                &model,
+                &tokenizer,
+                val_tokens,
+                &samples,
+                batch_size,
+                4,
+                &mut rng,
+            );
+            (Some(vl), Some(bench), samples, md_l, s_entries)
         } else {
-            None
+            (None, None, Vec::new(), Vec::new(), Vec::new())
         };
 
         let step_elapsed = step_start.elapsed().as_millis();
@@ -481,6 +561,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 None
             },
+            benchmark: benchmark_opt.as_ref().map(oniwa_lm::logger::BenchmarkLog::from),
         };
 
         use std::io::Write;
@@ -490,6 +571,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 7. 発達プロセスの観測（log_intervalステップごと、または最終ステップ）
         if is_eval_step {
             let val_loss_val = val_loss_opt.unwrap_or(0.0);
+            let bench = benchmark_opt.as_ref().unwrap();
             println!(
                 "Step {:3}/{} | Train Loss: {:.4} | Val Loss: {:.4} | LR: {:.5} | Temp: {} | Net Power: {:.1}W (総{:.1}W) | Net Energy: {:.4}Wh",
                 step,
@@ -504,6 +586,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 reading.gross_watts,
                 reading.net_accum_wh
             );
+            println!("  🧠 知能ベンチ: {}", bench.summary_line());
+            let correct_cloze: Vec<_> = bench.cloze_details.iter()
+                .filter(|d| d.top1_hit)
+                .map(|d| format!("「{}[{}]」", d.prompt, d.target))
+                .collect();
+            if !correct_cloze.is_empty() {
+                println!("     🎉 正解クイズ (Top-1): {}", correct_cloze.join(", "));
+            }
 
             // ベストチェックポイントの自動保存
             if val_loss_val < best_val_loss {
@@ -519,17 +609,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 途中経過の生成文 (複数プローブ巡回・自己回帰サンプリング生成)
             println!("  🌱 発達途中の生成（複数プローブ巡回）:");
-            let mut md_lines = Vec::new();
-            let mut sample_entries = Vec::new();
-            for p in &observation_prompts {
-                let gen = generate_sample(&model, &tokenizer, p, gen_len, &mut rng);
+            for (p, gen) in observation_prompts.iter().zip(raw_samples.iter()) {
                 println!("    - [{}] -> 「{}」", p, gen);
-                let clean = gen.replace('\n', " ").replace('|', "\\|");
-                md_lines.push(format!("**[{}]** `{}`", p, clean));
-                sample_entries.push(serde_json::json!({
-                    "prompt": p,
-                    "generated_text": gen,
-                }));
             }
             println!();
 
@@ -542,8 +623,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_else(|| "-".into());
                 writeln!(
                     journal_md,
-                    "| Step {:5} | {:.4} | {:.4} | {} / 純{:.1}W (総{:.1}W) | {} |",
-                    step, loss, val_loss_val, temp_str, reading.net_watts, reading.gross_watts, md_text
+                    "| Step {:5} | {:.4} | {:.4} | {} | {} / 純{:.1}W (総{:.1}W) | {} |",
+                    step, loss, val_loss_val, bench.short_display(), temp_str, reading.net_watts, reading.gross_watts, md_text
                 )?;
                 journal_md.flush()?;
 
@@ -552,6 +633,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "train_loss": loss,
                     "val_loss": val_loss_val,
                     "lr": lr,
+                    "benchmark": {
+                        "top5_accuracy": bench.top5_accuracy,
+                        "cloze_top1_accuracy": bench.cloze_top1_accuracy,
+                        "cloze_top5_accuracy": bench.cloze_top5_accuracy,
+                        "syntactic_score": bench.syntactic_score,
+                        "bracket_score": bench.bracket_score,
+                        "non_repetition_score": bench.non_repetition_score,
+                    },
                     "samples": sample_entries,
                     "cpu_temp_c": cpu_temp,
                     "net_power_w": reading.net_watts,
@@ -676,31 +765,4 @@ fn generate_sample(
     }
 
     tokenizer.decode(&tokens)
-}
-
-/// 検証用データセットからミニバッチをサンプリングして Val Loss を算出
-fn evaluate_validation_loss(
-    model: &ModelWeights,
-    val_tokens: &[u16],
-    seq_len: usize,
-    batch_size: usize,
-    num_eval_batches: usize,
-    rng: &mut DeterministicRng,
-) -> f32 {
-    if val_tokens.len() <= seq_len + 1 {
-        return 0.0;
-    }
-    let mut total = 0.0f32;
-    let max_idx = val_tokens.len() - seq_len - 1;
-    for _ in 0..num_eval_batches {
-        let mut x_val = Vec::with_capacity(batch_size * seq_len);
-        let mut y_val = Vec::with_capacity(batch_size * seq_len);
-        for _ in 0..batch_size {
-            let start_idx = (rng.next_f32() * max_idx as f32) as usize;
-            x_val.extend_from_slice(&val_tokens[start_idx..start_idx + seq_len]);
-            y_val.extend_from_slice(&val_tokens[start_idx + 1..start_idx + 1 + seq_len]);
-        }
-        total += model.evaluate_loss(&x_val, &y_val, batch_size, seq_len);
-    }
-    total / (num_eval_batches as f32)
 }
