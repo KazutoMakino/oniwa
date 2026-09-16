@@ -519,11 +519,18 @@ pub fn evaluate_syntactic_health(texts: &[String]) -> (f32, f32, f32, f32, f32) 
 
     let avg_bracket = bracket_scores.iter().sum::<f32>() / bracket_scores.len() as f32;
     let avg_non_rep = non_rep_scores.iter().sum::<f32>() / non_rep_scores.len() as f32;
-    let avg_code_bracket = code_bracket_scores.iter().sum::<f32>() / code_bracket_scores.len() as f32;
+    let avg_code_bracket =
+        code_bracket_scores.iter().sum::<f32>() / code_bracket_scores.len() as f32;
     let avg_indent = indent_scores.iter().sum::<f32>() / indent_scores.len() as f32;
     let combined = (avg_bracket + avg_non_rep + avg_code_bracket + avg_indent) / 4.0;
 
-    (combined, avg_bracket, avg_non_rep, avg_code_bracket, avg_indent)
+    (
+        combined,
+        avg_bracket,
+        avg_non_rep,
+        avg_code_bracket,
+        avg_indent,
+    )
 }
 
 /// 多軸評価ベンチマークの総合実行（二刀流: 文学＋コード対応）
@@ -623,7 +630,10 @@ mod tests {
     #[test]
     fn test_bracket_scoring() {
         // 括弧なし -> 100%
-        assert_eq!(compute_bracket_score("吾輩は猫である。名前はまだ無い。"), 100.0);
+        assert_eq!(
+            compute_bracket_score("吾輩は猫である。名前はまだ無い。"),
+            100.0
+        );
 
         // 正しい対の括弧 -> 100%
         assert_eq!(compute_bracket_score("メロスは「走れ！」と言った。"), 100.0);
@@ -641,11 +651,15 @@ mod tests {
     #[test]
     fn test_non_repetition_scoring() {
         // 正常な文
-        let normal = compute_non_repetition_score("吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。");
+        let normal = compute_non_repetition_score(
+            "吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。",
+        );
         assert!(normal > 80.0);
 
         // 縮退した反復ループ
-        let degenerate = compute_non_repetition_score("ああああああああああああああああああああああああああああああ");
+        let degenerate = compute_non_repetition_score(
+            "ああああああああああああああああああああああああああああああ",
+        );
         assert!(degenerate < 20.0);
     }
 
@@ -677,12 +691,16 @@ mod tests {
     #[test]
     fn test_code_bracket_and_indent_scoring() {
         // 正しいコード括弧
-        assert_eq!(compute_code_bracket_score("fn main() { let arr = [1, 2, 3]; }"), 100.0);
+        assert_eq!(
+            compute_code_bracket_score("fn main() { let arr = [1, 2, 3]; }"),
+            100.0
+        );
         // 不正なコード括弧
         assert!(compute_code_bracket_score("fn main() { let arr = [1, 2, 3; }") < 100.0);
 
         // 正しい4スペースインデント
-        let clean_py = "def foo():\n    x = 1\n    if x > 0:\n        return True\n    return False\n";
+        let clean_py =
+            "def foo():\n    x = 1\n    if x > 0:\n        return True\n    return False\n";
         assert_eq!(compute_indent_score(clean_py), 100.0);
 
         // 奇数スペースの不正インデント

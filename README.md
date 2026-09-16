@@ -1,4 +1,18 @@
 # ONIWA (お庭)
+
+<p align="left">
+  <a href="https://github.com/KazutoMakino/oniwa/actions"><img src="https://img.shields.io/github/actions/workflow/status/KazutoMakino/oniwa/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status"></a>
+  <img src="https://img.shields.io/badge/language-Rust-DEA584.svg?logo=rust&logoColor=white&style=flat-square" alt="Rust">
+  <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
+</p>
+<p align="left">
+  <img src="https://img.shields.io/badge/dependency-Pure%20Rust%20(No%20CUDA%20%2F%20No%20PyTorch)-black.svg?style=flat-square" alt="Pure Rust">
+  <img src="https://img.shields.io/badge/target-Raspberry%20Pi%204%20%7C%20Linux%20%7C%20macOS%20%7C%20Windows-informational.svg?style=flat-square" alt="Target Platforms">
+  <img src="https://img.shields.io/badge/data%20provenance-100%25%20Audited%20%26%20Clean-success.svg?style=flat-square" alt="Data Provenance">
+  <img src="https://img.shields.io/badge/power-~5W%20Edge%20Intelligence-forestgreen.svg?style=flat-square" alt="Power Consumption">
+</p>
+
 > **ONIWA: Organic Non-datacenter Intelligence Without Abuse**  
 > — 家庭菜園としての知能、クリーンな土壌と自己変容するアーキテクチャ —
 

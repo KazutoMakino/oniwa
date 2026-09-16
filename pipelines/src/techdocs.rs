@@ -294,7 +294,10 @@ impl TechDocsPipeline {
     }
 
     /// 技術ドキュメントMarkdownをダウンロード（失敗時はシードコンテンツにフォールバック）
-    pub fn download_doc(&self, target: &TechDocTarget) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    pub fn download_doc(
+        &self,
+        target: &TechDocTarget,
+    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let dest_path = self.raw_dir.join(format!("techdoc_{}.md", target.name));
         if !self.force_download && dest_path.exists() && dest_path.metadata()?.len() > 0 {
             return Ok(dest_path);
@@ -302,7 +305,8 @@ impl TechDocsPipeline {
 
         println!("  📥 [TechDoc] ダウンロード試行: 『{}』 ...", target.title);
 
-        let user_agent = "oniwa-pipeline/0.1.0 (Ethical Open Source Docs Ingestion; Educational AI)";
+        let user_agent =
+            "oniwa-pipeline/0.1.0 (Ethical Open Source Docs Ingestion; Educational AI)";
         let status = Command::new("curl")
             .arg("-s")
             .arg("-f")
@@ -323,13 +327,19 @@ impl TechDocsPipeline {
             }
         }
 
-        println!("  ⚠️ ダウンロード失敗またはタイムアウト。公式シードドキュメントを展開します: 『{}』", target.title);
+        println!(
+            "  ⚠️ ダウンロード失敗またはタイムアウト。公式シードドキュメントを展開します: 『{}』",
+            target.title
+        );
         fs::write(&dest_path, target.seed_content.as_bytes())?;
         Ok(dest_path)
     }
 
     /// 単一の技術ドキュメントを前処理してコーパスに保存し、監査台帳に記録
-    pub fn ingest_single_doc(&self, target: &TechDocTarget) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    pub fn ingest_single_doc(
+        &self,
+        target: &TechDocTarget,
+    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let raw_path = self.download_doc(target)?;
         let raw_bytes = fs::read(&raw_path)?;
         let raw_sha256 = compute_checksum_bytes(&raw_bytes);

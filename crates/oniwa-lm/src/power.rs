@@ -47,13 +47,19 @@ impl PowerProfile {
             .unwrap_or("Generic CPU");
 
         // 省電力モバイル向けCPU (Uシリーズ, 低TDP)
-        if cpu_name.contains(" U") || cpu_name.contains("Mobile") || cpu_name.contains("Core i") && cpu_name.contains('U') {
+        if cpu_name.contains(" U")
+            || cpu_name.contains("Mobile")
+            || cpu_name.contains("Core i") && cpu_name.contains('U')
+        {
             Self {
                 name: format!("モバイル省電力CPU: {}", cpu_name),
                 idle_watts: 8.0,
                 busy_watts_delta: 20.0,
             }
-        } else if cpu_name.contains("EPYC") || cpu_name.contains("Xeon") || cpu_name.contains("Threadripper") {
+        } else if cpu_name.contains("EPYC")
+            || cpu_name.contains("Xeon")
+            || cpu_name.contains("Threadripper")
+        {
             Self {
                 name: format!("サーバー/ワークステーションCPU: {}", cpu_name),
                 idle_watts: 45.0,
@@ -171,7 +177,11 @@ impl PowerTracker {
         for _ in 0..3 {
             if let Ok(content) = fs::read_to_string(path) {
                 if let Ok(raw_val) = content.trim().parse::<f64>() {
-                    let w = if is_uw { raw_val / 1_000_000.0 } else { raw_val };
+                    let w = if is_uw {
+                        raw_val / 1_000_000.0
+                    } else {
+                        raw_val
+                    };
                     if w > 0.0 && w < 300.0 {
                         sum += w;
                         count += 1;
@@ -211,7 +221,11 @@ impl PowerTracker {
                             if let Ok(content) = fs::read_to_string(&file) {
                                 if let Ok(val) = content.trim().parse::<f64>() {
                                     if val > 0.0 {
-                                        let label_file = dir.join(fname.replace("_input", "_label").replace("_average", "_label"));
+                                        let label_file = dir.join(
+                                            fname
+                                                .replace("_input", "_label")
+                                                .replace("_average", "_label"),
+                                        );
                                         let label = fs::read_to_string(&label_file)
                                             .unwrap_or_default()
                                             .trim()
@@ -245,7 +259,10 @@ impl PowerTracker {
                 if power_now.exists() {
                     if let Ok(content) = fs::read_to_string(&power_now) {
                         if content.trim().parse::<f64>().is_ok() {
-                            let name = entry.file_name().and_then(|n| n.to_str()).unwrap_or("battery");
+                            let name = entry
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("battery");
                             return Some((power_now, format!("power_supply/{}", name)));
                         }
                     }

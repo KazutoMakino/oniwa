@@ -18,7 +18,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let git_commit = oniwa_lm::logger::get_git_commit_hash();
     let git_short = oniwa_lm::logger::get_git_short_hash();
     let git_dirty = oniwa_lm::logger::get_git_dirty();
-    let dirty_str = if git_dirty { " (dirty / 未コミット変更あり)" } else { " (clean)" };
+    let dirty_str = if git_dirty {
+        " (dirty / 未コミット変更あり)"
+    } else {
+        " (clean)"
+    };
 
     println!("============================================================");
     println!(" 🪨 ONIWA: Organic Non-datacenter Intelligence Without Abuse");
@@ -176,7 +180,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  - 学習データ: {}", dataset_name);
     println!("  - 語彙サイズ (V): {} 文字", tokenizer.vocab_size());
     println!("  - 総トークン数: {} トークン", tokens.len());
-    println!("  - データ分割: Train {} トークン (90%) / Val {} トークン (10%)", train_tokens.len(), val_tokens.len());
+    println!(
+        "  - データ分割: Train {} トークン (90%) / Val {} トークン (10%)",
+        train_tokens.len(),
+        val_tokens.len()
+    );
 
     // ---------------------------------------------------------
     // 2. モデル初期化 & 再現性設定
@@ -222,18 +230,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut model = ModelWeights::new(config.clone(), &mut rng);
     let total_params = model.params.len();
-    println!("  - モデル構造: 文脈長 {}文字, 隠れ層 {}次元, レイヤー数 {}, アテンションHead {}",
-        config.seq_len, config.dim, config.num_layers, config.num_heads);
-    println!("  - パラメータ総数: {} (約 {:.2} M params)", total_params, total_params as f32 / 1_000_000.0);
-    println!("  - 正則化・損失関数: Label Smoothing ({:.2}) + Z-loss ({:e})", config.label_smoothing, config.z_loss_weight);
+    println!(
+        "  - モデル構造: 文脈長 {}文字, 隠れ層 {}次元, レイヤー数 {}, アテンションHead {}",
+        config.seq_len, config.dim, config.num_layers, config.num_heads
+    );
+    println!(
+        "  - パラメータ総数: {} (約 {:.2} M params)",
+        total_params,
+        total_params as f32 / 1_000_000.0
+    );
+    println!(
+        "  - 正則化・損失関数: Label Smoothing ({:.2}) + Z-loss ({:e})",
+        config.label_smoothing, config.z_loss_weight
+    );
 
     // チェックポイントの自動検出と再開 (latest & best)
     let mut start_step = 1;
     let mut current_seed = seed;
     let mut best_val_loss = if !reset_mode && best_checkpoint_dir.join("meta.json").exists() {
-        let meta_str = fs::read_to_string(best_checkpoint_dir.join("meta.json")).unwrap_or_default();
+        let meta_str =
+            fs::read_to_string(best_checkpoint_dir.join("meta.json")).unwrap_or_default();
         let meta: serde_json::Value = serde_json::from_str(&meta_str).unwrap_or_default();
-        meta["loss"].as_f64().map(|v| v as f32).unwrap_or(f32::INFINITY)
+        meta["loss"]
+            .as_f64()
+            .map(|v| v as f32)
+            .unwrap_or(f32::INFINITY)
     } else {
         f32::INFINITY
     };
@@ -244,7 +265,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok((resumed_step, resumed_loss, resumed_seed)) => {
                 start_step = resumed_step + 1;
                 current_seed = resumed_seed;
-                println!("  ✅ チェックポイント復元成功: Step {} より再開 (直前Loss: {:.4})", resumed_step, resumed_loss);
+                println!(
+                    "  ✅ チェックポイント復元成功: Step {} より再開 (直前Loss: {:.4})",
+                    resumed_step, resumed_loss
+                );
                 if !best_val_loss.is_infinite() {
                     println!("  🏆 既存ベスト Val Loss: {:.4}", best_val_loss);
                 }
@@ -256,7 +280,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if reset_mode {
         println!("  🔄 --reset が指定されたため、既存チェックポイントを破棄して新規開始します (Seed: {})", seed);
     } else {
-        println!("  - 新規セッション開始 (チェックポイントなし, Seed: {})", seed);
+        println!(
+            "  - 新規セッション開始 (チェックポイントなし, Seed: {})",
+            seed
+        );
     }
 
     let init_checksum = compute_checksum_f32(&model.params);
@@ -291,7 +318,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let current_time_iso = oniwa_lm::logger::current_timestamp_utc();
-    let default_run_id = format!("run_{}", current_time_iso.replace(['-', ':', 'T', 'Z'], "_").trim_end_matches('_'));
+    let default_run_id = format!(
+        "run_{}",
+        current_time_iso
+            .replace(['-', ':', 'T', 'Z'], "_")
+            .trim_end_matches('_')
+    );
     let run_id = run_name_arg.unwrap_or(default_run_id);
     let run_dir = logs_dir.join("runs").join(&run_id);
     fs::create_dir_all(&run_dir)?;
@@ -350,20 +382,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .open(&journal_jsonl_path)?;
 
     // 新規作成時はヘッダーを書き込む（または「知能ベンチ」列のない既存ヘッダーを更新）
-    let prompts_display = observation_prompts.iter().map(|p| format!("「{}」", p)).collect::<Vec<_>>().join(" / ");
-    let should_write_header = reset_mode || !journal_md_path.exists() || journal_md.metadata()?.len() == 0;
+    let prompts_display = observation_prompts
+        .iter()
+        .map(|p| format!("「{}」", p))
+        .collect::<Vec<_>>()
+        .join(" / ");
+    let should_write_header =
+        reset_mode || !journal_md_path.exists() || journal_md.metadata()?.len() == 0;
     if should_write_header {
         use std::io::Write;
-        writeln!(journal_md, "# 🌿 ONIWA 観葉植物・生育観察日記 (Growth Journal)")?;
+        writeln!(
+            journal_md,
+            "# 🌿 ONIWA 観葉植物・生育観察日記 (Growth Journal)"
+        )?;
         writeln!(journal_md, "> **「言葉は認知の影であり、コードは生命のDNAである」**  \n> モデルが完全な乱数ノイズ（Step 0）から言葉の芽を吹き、文脈を獲得していく変容の記録です。\n")?;
         writeln!(journal_md, "- **観察セッション**: `{}`", run_id)?;
-        writeln!(journal_md, "- **実行Gitコミット**: `{}`{}", git_short, dirty_str)?;
-        writeln!(journal_md, "- **観察プロンプト群（巡回プローブ）**: {}", prompts_display)?;
+        writeln!(
+            journal_md,
+            "- **実行Gitコミット**: `{}`{}",
+            git_short, dirty_str
+        )?;
+        writeln!(
+            journal_md,
+            "- **観察プロンプト群（巡回プローブ）**: {}",
+            prompts_display
+        )?;
         writeln!(journal_md, "- **生成文字数**: 各 {} 文字", gen_len)?;
-        writeln!(journal_md, "- **モデル規模**: {} layers, {} heads, dim {} (約 {:.1}K params)\n",
-            config.num_layers, config.num_heads, config.dim, total_params as f32 / 1000.0)?;
+        writeln!(
+            journal_md,
+            "- **モデル規模**: {} layers, {} heads, dim {} (約 {:.1}K params)\n",
+            config.num_layers,
+            config.num_heads,
+            config.dim,
+            total_params as f32 / 1000.0
+        )?;
         writeln!(journal_md, "| ステップ | 訓練損失 (Train) | 検証損失 (Val) | 知能ベンチ (Top-5 / クイズ / 構文) | コア温度 / 電力 | 発達途中の生成文（言葉の芽吹き） |")?;
-        writeln!(journal_md, "| :---: | :---: | :---: | :---: | :---: | :--- |")?;
+        writeln!(
+            journal_md,
+            "| :---: | :---: | :---: | :---: | :---: | :--- |"
+        )?;
         journal_md.flush()?;
     } else {
         let existing = fs::read_to_string(&journal_md_path).unwrap_or_default();
@@ -374,10 +431,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             writeln!(file, "> **「言葉は認知の影であり、コードは生命のDNAである」**  \n> モデルが完全な乱数ノイズ（Step 0）から言葉の芽を吹き、文脈を獲得していく変容の記録です。\n")?;
             writeln!(file, "- **観察セッション**: `{}`", run_id)?;
             writeln!(file, "- **実行Gitコミット**: `{}`{}", git_short, dirty_str)?;
-            writeln!(file, "- **観察プロンプト群（巡回プローブ）**: {}", prompts_display)?;
+            writeln!(
+                file,
+                "- **観察プロンプト群（巡回プローブ）**: {}",
+                prompts_display
+            )?;
             writeln!(file, "- **生成文字数**: 各 {} 文字", gen_len)?;
-            writeln!(file, "- **モデル規模**: {} layers, {} heads, dim {} (約 {:.1}K params)\n",
-                config.num_layers, config.num_heads, config.dim, total_params as f32 / 1000.0)?;
+            writeln!(
+                file,
+                "- **モデル規模**: {} layers, {} heads, dim {} (約 {:.1}K params)\n",
+                config.num_layers,
+                config.num_heads,
+                config.dim,
+                total_params as f32 / 1000.0
+            )?;
             writeln!(file, "| ステップ | 訓練損失 (Train) | 検証損失 (Val) | 知能ベンチ (Top-5 / クイズ / 構文) | コア温度 / 電力 | 発達途中の生成文（言葉の芽吹き） |")?;
             writeln!(file, "| :---: | :---: | :---: | :---: | :---: | :--- |")?;
             file.flush()?;
@@ -407,16 +474,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             raw_samples.push(s);
         }
 
-        let (val_0, bench_0) = run_benchmark(
-            &model,
-            &tokenizer,
-            val_tokens,
-            &raw_samples,
-            4,
-            4,
-            &mut rng,
+        let (val_0, bench_0) =
+            run_benchmark(&model, &tokenizer, val_tokens, &raw_samples, 4, 4, &mut rng);
+        println!(
+            "【Step 0 (初期状態)】 初期検証損失 (Val Loss): {:.4}",
+            val_0
         );
-        println!("【Step 0 (初期状態)】 初期検証損失 (Val Loss): {:.4}", val_0);
         println!("  🧠 初期知能ベンチ: {}", bench_0.summary_line());
         println!("  （※まだ何も学んでいないため、完全なランダム文字が出力されます）");
         println!("------------------------------------------------------------\n");
@@ -459,15 +522,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("    [{}] -> 「{}」", p, s);
             raw_samples.push(s);
         }
-        let (current_val, bench_cur) = run_benchmark(
-            &model,
-            &tokenizer,
-            val_tokens,
-            &raw_samples,
-            4,
-            4,
-            &mut rng,
-        );
+        let (current_val, bench_cur) =
+            run_benchmark(&model, &tokenizer, val_tokens, &raw_samples, 4, 4, &mut rng);
         println!("  - 現在の検証損失 (Val Loss): {:.4}", current_val);
         println!("  🧠 現在の知能ベンチ: {}", bench_cur.summary_line());
         println!("  （※保存されたチェックポイントの知能状態を引き継いでここから学習を継続します）");
@@ -509,10 +565,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target_steps_display = if infinite_mode {
         "無限 (Ctrl+C でいつでも安全停止)".to_string()
     } else {
-        format!("Step {} 〜 {} (追加 {} ステップ)", start_step, target_steps, total_session_steps)
+        format!(
+            "Step {} 〜 {} (追加 {} ステップ)",
+            start_step, target_steps, total_session_steps
+        )
     };
     println!("  - 学習範囲: {}", target_steps_display);
-    println!("  - 学習率スケジュール: Cosine LR Decay (Peak: {:.4}, Min: {:.4}, Warmup: {} steps)", max_lr, min_lr, warmup_steps);
+    println!(
+        "  - 学習率スケジュール: Cosine LR Decay (Peak: {:.4}, Min: {:.4}, Warmup: {} steps)",
+        max_lr, min_lr, warmup_steps
+    );
     println!("  - （※ Ctrl+C で途中で止めても、自動でチェックポイントが保存されます）\n");
 
     let start_time = Instant::now();
@@ -526,7 +588,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let step_start = Instant::now();
 
         // 学習率の動的計算（Warmup + Cosine Decay）
-        let effective_max_steps = if infinite_mode { step + 10000 } else { target_steps };
+        let effective_max_steps = if infinite_mode {
+            step + 10000
+        } else {
+            target_steps
+        };
         let lr = compute_cosine_lr(step, effective_max_steps, max_lr, min_lr, warmup_steps);
 
         // 1. ミニバッチ切り出し (訓練用データセットからサンプリング)
@@ -542,7 +608,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 2. 本格Transformer順伝播・逆伝播・Loss計算（Self-Attention + RoPE + SwiGLU + RMSNorm）
         model.zero_grad();
-        let (loss, grad_norm) = model.forward_backward(&x_batch, &y_batch, batch_size, config.seq_len);
+        let (loss, grad_norm) =
+            model.forward_backward(&x_batch, &y_batch, batch_size, config.seq_len);
 
         // 3. AdamW 更新
         model.adamw_step(lr, wd, 0.9, 0.999, 1e-8, step);
@@ -572,13 +639,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let (vl, bench) = run_benchmark(
-                &model,
-                &tokenizer,
-                val_tokens,
-                &samples,
-                batch_size,
-                4,
-                &mut rng,
+                &model, &tokenizer, val_tokens, &samples, batch_size, 4, &mut rng,
             );
             (Some(vl), Some(bench), samples, md_l, s_entries)
         } else {
@@ -605,7 +666,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 None
             },
-            benchmark: benchmark_opt.as_ref().map(oniwa_lm::logger::BenchmarkLog::from),
+            benchmark: benchmark_opt
+                .as_ref()
+                .map(oniwa_lm::logger::BenchmarkLog::from),
         };
 
         use std::io::Write;
@@ -631,7 +694,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 reading.net_accum_wh
             );
             println!("  🧠 知能ベンチ: {}", bench.summary_line());
-            let correct_cloze: Vec<_> = bench.cloze_details.iter()
+            let correct_cloze: Vec<_> = bench
+                .cloze_details
+                .iter()
                 .filter(|d| d.top1_hit)
                 .map(|d| format!("「{}[{}]」", d.prompt, d.target))
                 .collect();
@@ -643,9 +708,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if val_loss_val < best_val_loss {
                 let prev_best = best_val_loss;
                 best_val_loss = val_loss_val;
-                let _ = model.save_checkpoint(&best_checkpoint_dir, step, val_loss_val, current_seed);
+                let _ =
+                    model.save_checkpoint(&best_checkpoint_dir, step, val_loss_val, current_seed);
                 if prev_best.is_infinite() {
-                    println!("  🏆 [BEST初記録] Val Loss: {:.4} -> `checkpoints/best` に保存しました", val_loss_val);
+                    println!(
+                        "  🏆 [BEST初記録] Val Loss: {:.4} -> `checkpoints/best` に保存しました",
+                        val_loss_val
+                    );
                 } else {
                     println!("  🏆 [BEST更新] Val Loss: {:.4} -> {:.4} -> `checkpoints/best` に保存しました", prev_best, val_loss_val);
                 }
@@ -668,7 +737,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 writeln!(
                     journal_md,
                     "| Step {:5} | {:.4} | {:.4} | {} | {} / 純{:.1}W (総{:.1}W) | {} |",
-                    step, loss, val_loss_val, bench.short_display(), temp_str, reading.net_watts, reading.gross_watts, md_text
+                    step,
+                    loss,
+                    val_loss_val,
+                    bench.short_display(),
+                    temp_str,
+                    reading.net_watts,
+                    reading.gross_watts,
+                    md_text
                 )?;
                 journal_md.flush()?;
 
@@ -711,7 +787,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let net_cost_yen = power_tracker.cost_yen();
 
     // 最終チェックポイントの保存（実際のステップ数と最終Lossを記録）
-    let final_step = if step > start_step { step - 1 } else { start_step - 1 };
+    let final_step = if step > start_step {
+        step - 1
+    } else {
+        start_step - 1
+    };
     let _ = model.save_checkpoint(&checkpoint_dir, final_step, last_loss, current_seed);
 
     // 最新の育成観察日記を logs/growth_journal.md にも同期
@@ -725,10 +805,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  - 最終重み SHA-256: {}...", &final_checksum[..16]);
     println!("------------------------------------------------------------");
     println!(" 🌿 エコ実績サマリー（アンチテーゼの実証）:");
-    println!("  - ⚡ 計算専用消費電力量 (Net): {:.4} Wh ({:.2} Joules)", net_wh, net_wh * 3600.0);
-    println!("    (※ 平常アイドル電力 {:.1}W を除外した、純粋にこの学習処理にのみ使われた電力)", power_tracker.baseline_watts());
-    println!("  - 🖥️ 参考: ハードウェア総電力量 (Gross): {:.4} Wh ({:.2} Joules)", gross_wh, gross_wh * 3600.0);
-    println!("  - 💴 推定電気代 (計算分): 約 {:.4} 円（1円未満！）", net_cost_yen);
+    println!(
+        "  - ⚡ 計算専用消費電力量 (Net): {:.4} Wh ({:.2} Joules)",
+        net_wh,
+        net_wh * 3600.0
+    );
+    println!(
+        "    (※ 平常アイドル電力 {:.1}W を除外した、純粋にこの学習処理にのみ使われた電力)",
+        power_tracker.baseline_watts()
+    );
+    println!(
+        "  - 🖥️ 参考: ハードウェア総電力量 (Gross): {:.4} Wh ({:.2} Joules)",
+        gross_wh,
+        gross_wh * 3600.0
+    );
+    println!(
+        "  - 💴 推定電気代 (計算分): 約 {:.4} 円（1円未満！）",
+        net_cost_yen
+    );
     println!("  - 🌍 推定CO2排出量 (計算分): 約 {:.4} g-CO2", net_co2_g);
     println!("  - 💡 目安: スマートフォンの充電1回分（約 10〜15Wh）の数分の一！");
     println!("============================================================");
@@ -756,7 +850,8 @@ fn compute_cosine_lr(
         min_lr
     } else {
         // コサイン減衰: max_lr から min_lr まで滑らかに減衰
-        let progress = (step - warmup_steps) as f32 / (max_steps.saturating_sub(warmup_steps)).max(1) as f32;
+        let progress =
+            (step - warmup_steps) as f32 / (max_steps.saturating_sub(warmup_steps)).max(1) as f32;
         let cosine = 0.5 * (1.0 + (std::f32::consts::PI * progress).cos());
         min_lr + (max_lr - min_lr) * cosine
     }

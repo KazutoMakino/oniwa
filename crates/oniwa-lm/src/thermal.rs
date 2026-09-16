@@ -110,7 +110,11 @@ impl ThermalController {
 
                                 // 最優先: AMD k10temp / Intel coretemp / Zenpower
                                 if name == "k10temp" || name == "coretemp" || name == "zenpower" {
-                                    if label == "Tctl" || label == "Package id 0" || label.contains("CPU") || label.is_empty() {
+                                    if label == "Tctl"
+                                        || label == "Package id 0"
+                                        || label.contains("CPU")
+                                        || label.is_empty()
+                                    {
                                         return (Some(file), Some(desc));
                                     }
                                 }
@@ -129,7 +133,11 @@ impl ThermalController {
         if let Ok(entries) = fs::read_dir("/sys/class/thermal") {
             let mut tz_dirs: Vec<PathBuf> = entries
                 .filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.file_name().and_then(|n| n.to_str()).map_or(false, |s| s.starts_with("thermal_zone")))
+                .filter(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map_or(false, |s| s.starts_with("thermal_zone"))
+                })
                 .collect();
             tz_dirs.sort();
 
@@ -216,7 +224,8 @@ impl ThermalController {
             Some(t) if t >= self.config.target_temp_c => {
                 // 目標超過: 比例スリープ
                 let over = t - self.config.target_temp_c;
-                let scale = (over / (self.config.critical_temp_c - self.config.target_temp_c)).min(1.0);
+                let scale =
+                    (over / (self.config.critical_temp_c - self.config.target_temp_c)).min(1.0);
                 let wait = (self.config.throttle_sleep_ms as f32 * (1.0 + scale)) as u64;
                 thread::sleep(Duration::from_millis(wait));
                 wait
