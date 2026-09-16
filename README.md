@@ -97,9 +97,73 @@ cargo run --release -p oniwa-lm --bin train -- --add-steps 100
 #   --reset         : 既存チェックポイントを破棄して新規開始
 #   --infinite, -i  : 無限学習ループ
 ```
-学習中の生成文（言葉の芽吹き）は、**`crates/oniwa-lm/logs/growth_journal.md`** に観葉植物の観察日記として自動記録されます。
+学習中の生成文（言葉の芽吹き）は、**`logs/growth_journal.md`** に観葉植物の観察日記として自動記録されます。
 
-### 4. インタラクティブ推論 (チャット)
+### 4. バックグラウンド実行 & プロセス運用ガイド (遠隔・放置運用)
+
+Raspberry Pi 4 に別PCから SSH 接続して学習させる場合、PC をシャットダウンしたり SSH を切断しても安全に学習を継続・監視・停止するためのコマンド一覧です。
+
+#### ① バックグラウンド実行（SSH切断後も放置で継続）
+事前に release ビルドしておき、`nohup` で起動します。
+```bash
+# 事前ビルド
+cargo build --release -p oniwa-lm --bin train
+
+# バックグラウンド実行開始（ログを train.log に書き出し、標準エラーも統合）
+nohup target/release/train --infinite --interval 50 > train.log 2>&1 &
+```
+> [!TIP]
+> **仮想端末（`screen`）を使う場合**:
+> ```bash
+> # screenセッションを作成して開始
+> screen -S oniwa-train target/release/train --infinite --interval 50
+> # デタッチ（セッションから抜ける）: Ctrl + A を押した後に D
+> # 再アタッチ（再度画面に戻る）: screen -r oniwa-train
+> ```
+
+#### ② 稼働状態・プロセスの確認
+```bash
+# 実行中の学習プロセスの確認 (PIDとCPU使用率を表示)
+ps aux | grep target/release/train | grep -v grep
+
+# または pgrep でプロセス名とPIDを確認
+pgrep -a train
+```
+
+#### ③ リアルタイム監視
+```bash
+# 出力ログをリアルタイムで追跡表示 (追跡終了は Ctrl + C)
+tail -f train.log
+
+# 直近の最新ログ50行を確認
+tail -n 50 train.log
+
+# 観葉植物・生育観察日記（成長記録）の確認
+cat logs/growth_journal.md | tail -n 20
+```
+
+#### ④ 安全な学習停止（チェックポイント自動保存）
+`oniwa-lm` は `SIGINT`（Ctrl+C シグナル）をキャッチして、**直前の重みとオプティマイザ状態を安全にチェックポイント（`checkpoints/latest`）へ保存してから終了**するように設計されています。
+```bash
+# 安全停止 (SIGINTシグナルを送信して保存終了)
+pkill -SIGINT -f target/release/train
+
+# 特定の PID を指定して停止する場合
+kill -SIGINT <PID>
+```
+> [!WARNING]
+> `kill -9 <PID>` (SIGKILL) は強制終了となり、チェックポイント保存処理がスキップされるため、通常は **必ず `kill -SIGINT` または `pkill -SIGINT`** を使用してください。
+
+#### ⑤ ハードウェア状態・熱温度の確認
+```bash
+# Raspberry Pi の CPU 実温度を確認
+vcgencmd measure_temp
+
+# システム全体の負荷・メモリ確認
+htop
+```
+
+### 5. インタラクティブ推論 (チャット)
 ```bash
 cargo run --release -p oniwa-lm --bin chat
 ```
