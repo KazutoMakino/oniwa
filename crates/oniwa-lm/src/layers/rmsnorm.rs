@@ -32,7 +32,7 @@ impl RMSNorm {
         assert_eq!(rstd.len(), n);
         assert_eq!(weight.len(), d);
 
-        for row in 0..n {
+        for (row, r_out) in rstd.iter_mut().enumerate().take(n) {
             let offset = row * d;
             let inp_row = &inp[offset..offset + d];
             let out_row = &mut out[offset..offset + d];
@@ -46,7 +46,7 @@ impl RMSNorm {
             // 2. RMSの逆数 (rstd = 1 / sqrt(mean + eps))
             let mean_sq = sum_sq / (d as f32);
             let r = 1.0f32 / (mean_sq + eps).sqrt();
-            rstd[row] = r;
+            *r_out = r;
 
             // 3. 正規化とスケーリング: out = (x * r) * weight
             for i in 0..d {
@@ -79,12 +79,11 @@ impl RMSNorm {
         assert_eq!(dweight.len(), d);
         assert_eq!(weight.len(), d);
 
-        for row in 0..n {
+        for (row, &r) in rstd.iter().enumerate().take(n) {
             let offset = row * d;
             let inp_row = &inp[offset..offset + d];
             let dout_row = &dout[offset..offset + d];
             let dinp_row = &mut dinp[offset..offset + d];
-            let r = rstd[row];
 
             // 内積 S = sum( dout * weight * x_hat )
             let mut s = 0.0f32;

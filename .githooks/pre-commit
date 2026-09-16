@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Get list of staged Rust files
+staged_rs_files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.rs$' || true)
+staged_rust_code=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(\.rs$|Cargo\.toml$|Cargo\.lock$)' || true)
+
+if [ -n "$staged_rs_files" ]; then
+    echo "🌿 [oniwa pre-commit] Formatting Rust files (cargo fmt)..."
+    cargo fmt --all
+
+    # Re-stage any originally staged Rust files that were formatted
+    while IFS= read -r file; do
+        if [ -n "$file" ] && [ -f "$file" ]; then
+            git add "$file"
+        fi
+    done <<< "$staged_rs_files"
+fi
+
+if [ -n "$staged_rust_code" ]; then
+    echo "🌿 [oniwa pre-commit] Running Clippy static analysis..."
+    cargo clippy --workspace --all-targets -- -D warnings
+fi
+
+echo "🌿 [oniwa pre-commit] Checks completed successfully."
+exit 0

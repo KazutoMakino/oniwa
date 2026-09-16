@@ -683,8 +683,8 @@ mod tests {
         let questions = default_cloze_questions();
         let (top1, top5, details) = evaluate_cloze_suite(&model, &tokenizer, &questions);
 
-        assert!(top1 >= 0.0 && top1 <= 100.0);
-        assert!(top5 >= 0.0 && top5 <= 100.0);
+        assert!((0.0..=100.0).contains(&top1));
+        assert!((0.0..=100.0).contains(&top5));
         assert_eq!(details.len(), 10);
     }
 

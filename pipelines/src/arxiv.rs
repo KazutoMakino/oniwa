@@ -130,7 +130,7 @@ impl ArxivPipeline {
             let safe_id = entry
                 .id
                 .split('/')
-                .last()
+                .next_back()
                 .unwrap_or("unknown")
                 .replace(['.', ':'], "_");
 
