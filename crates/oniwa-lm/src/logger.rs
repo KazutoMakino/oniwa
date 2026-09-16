@@ -108,6 +108,14 @@ pub struct BenchmarkLog {
     pub syntactic_score: f32,
     pub bracket_score: f32,
     pub non_repetition_score: f32,
+    #[serde(default)]
+    pub lit_cloze_score: f32,
+    #[serde(default)]
+    pub code_cloze_score: f32,
+    #[serde(default)]
+    pub code_bracket_score: f32,
+    #[serde(default)]
+    pub indent_score: f32,
 }
 
 // ==========================================

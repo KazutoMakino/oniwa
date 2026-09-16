@@ -15,16 +15,46 @@ use crate::reproducibility::DeterministicRng;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModelConfig {
     pub vocab_size: usize,
+    #[serde(default = "default_seq_len")]
     pub seq_len: usize,
+    #[serde(default = "default_dim")]
     pub dim: usize,
+    #[serde(default = "default_num_layers")]
     pub num_layers: usize,
+    #[serde(default = "default_num_heads")]
     pub num_heads: usize,
+    #[serde(default = "default_head_dim")]
     pub head_dim: usize,
+    #[serde(default = "default_ffn_dim")]
     pub ffn_dim: usize,
     #[serde(default = "default_label_smoothing")]
     pub label_smoothing: f32,
     #[serde(default = "default_z_loss_weight")]
     pub z_loss_weight: f32,
+}
+
+pub fn default_seq_len() -> usize {
+    128
+}
+
+pub fn default_dim() -> usize {
+    128
+}
+
+pub fn default_num_layers() -> usize {
+    4
+}
+
+pub fn default_num_heads() -> usize {
+    4
+}
+
+pub fn default_head_dim() -> usize {
+    32
+}
+
+pub fn default_ffn_dim() -> usize {
+    256
 }
 
 pub fn default_label_smoothing() -> f32 {
@@ -37,18 +67,53 @@ pub fn default_z_loss_weight() -> f32 {
 
 impl Default for ModelConfig {
     fn default() -> Self {
-        // 山月記の学習・検証用マイクロモデル
+        // oniwa-v2 標準設定 (~2.05M params, seq_len 128)
         Self {
-            vocab_size: 800, // トークナイザー生成後に更新
-            seq_len: 32,
-            dim: 64,
-            num_layers: 2,
-            num_heads: 2,
-            head_dim: 32, // dim / num_heads
-            ffn_dim: 128,
+            vocab_size: 4721,
+            seq_len: default_seq_len(),
+            dim: default_dim(),
+            num_layers: default_num_layers(),
+            num_heads: default_num_heads(),
+            head_dim: default_head_dim(),
+            ffn_dim: default_ffn_dim(),
             label_smoothing: default_label_smoothing(),
             z_loss_weight: default_z_loss_weight(),
         }
+    }
+}
+
+impl ModelConfig {
+    /// meta.json から ModelConfig を復元（古いバージョンのチェックポイントに対する後方互換性フォールバック付き）
+    pub fn from_meta_json<P: AsRef<std::path::Path>>(meta_path: P) -> std::io::Result<Self> {
+        let content = std::fs::read_to_string(meta_path)?;
+        let meta: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+        let vocab_size = meta["vocab_size"].as_u64().unwrap_or(4721) as usize;
+        let dim = meta["dim"].as_u64().unwrap_or(128) as usize;
+        let num_layers = meta["num_layers"].as_u64().unwrap_or(4) as usize;
+        let seq_len = meta["seq_len"].as_u64().unwrap_or(128) as usize;
+        let num_heads = meta["num_heads"]
+            .as_u64()
+            .unwrap_or(if dim == 64 { 2 } else { 4 }) as usize;
+        let head_dim = meta["head_dim"].as_u64().unwrap_or(32) as usize;
+        let ffn_dim = meta["ffn_dim"]
+            .as_u64()
+            .unwrap_or(if dim == 64 { 128 } else { 256 }) as usize;
+        let label_smoothing = meta["label_smoothing"].as_f64().unwrap_or(0.05) as f32;
+        let z_loss_weight = meta["z_loss_weight"].as_f64().unwrap_or(1e-4) as f32;
+
+        Ok(Self {
+            vocab_size,
+            seq_len,
+            dim,
+            num_layers,
+            num_heads,
+            head_dim,
+            ffn_dim,
+            label_smoothing,
+            z_loss_weight,
+        })
     }
 }
 
@@ -229,6 +294,9 @@ impl ModelWeights {
             "vocab_size": self.config.vocab_size,
             "dim": self.config.dim,
             "num_layers": self.config.num_layers,
+            "num_heads": self.config.num_heads,
+            "head_dim": self.config.head_dim,
+            "ffn_dim": self.config.ffn_dim,
             "seq_len": self.config.seq_len,
             "label_smoothing": self.config.label_smoothing,
             "z_loss_weight": self.config.z_loss_weight,

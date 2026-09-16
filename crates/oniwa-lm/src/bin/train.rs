@@ -129,8 +129,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let default_prompts = vec![
         "その時、".to_string(),
         "メロスは、".to_string(),
-        "吾輩は、".to_string(),
-        "私は、".to_string(),
+        "def fibonacci(".to_string(),
+        "fn is_prime(".to_string(),
+        "use serde::".to_string(),
     ];
     let observation_prompts = if !custom_prompts.is_empty() {
         custom_prompts
@@ -146,8 +147,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (dataset_path, dataset_name, dataset_url) = if combined_corpus_path.exists() {
         (
             combined_corpus_path,
-            "青空文庫パブリックドメイン統合コーパス (複数作品)",
-            "https://www.aozora.gr.jp/",
+            "ONIWA 統合コーパス (青空文庫PD ＆ e-Gov法令 ＆ arXiv ＆ 公式技術仕様 ＆ クリーンコード)",
+            "https://github.com/KazutoMakino/oniwa",
         )
     } else if raw_text_path.exists() {
         (
@@ -156,7 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "https://ja.wikisource.org/wiki/山月記",
         )
     } else {
-        eprintln!("Error: 学習用テキストが見つかりません。まずは `cargo run -p oniwa-lm --bin dataset -- --preset` を実行してください。");
+        eprintln!("Error: 学習用テキストが見つかりません。まずは `cargo run -p oniwa-pipeline -- --all` を実行してください。");
         return Ok(());
     };
 
@@ -166,7 +167,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &logs_dir,
         dataset_name,
         dataset_url,
-        "Public Domain (著作権満了)",
+        "Public Domain & Clean Open Source",
     )?;
 
     let tokens = CharTokenizer::load_tokens_bin(data_dir.join("tokens.bin"))?;
@@ -180,29 +181,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---------------------------------------------------------
     // 2. モデル初期化 & 再現性設定
     // ---------------------------------------------------------
-    println!("\n[2/4] ⚙️ モデル初期化 & 決定論的シード設定...");
+    println!("\n[2/4] ⚙️ モデル初期化 & 決定論的シード設定 (oniwa-v2)...");
     let mut rng = DeterministicRng::new(seed);
 
-    let config = ModelConfig {
-        vocab_size: tokenizer.vocab_size(),
-        seq_len: 32,
-        dim: 64,
-        num_layers: 2,
-        num_heads: 2,
-        head_dim: 32,
-        ffn_dim: 128,
-        label_smoothing,
-        z_loss_weight,
+    let checkpoint_dir = base_dir.join("checkpoints").join("latest");
+    let best_checkpoint_dir = base_dir.join("checkpoints").join("best");
+
+    // 既存チェックポイントがあれば meta.json から構成を復元、新規またはリセットなら v2 デフォルト設定
+    let config = if !reset_mode && checkpoint_dir.join("meta.json").exists() {
+        match ModelConfig::from_meta_json(checkpoint_dir.join("meta.json")) {
+            Ok(mut c) => {
+                c.vocab_size = tokenizer.vocab_size();
+                c
+            }
+            Err(_) => ModelConfig {
+                vocab_size: tokenizer.vocab_size(),
+                seq_len: 128,
+                dim: 128,
+                num_layers: 4,
+                num_heads: 4,
+                head_dim: 32,
+                ffn_dim: 256,
+                label_smoothing,
+                z_loss_weight,
+            },
+        }
+    } else {
+        ModelConfig {
+            vocab_size: tokenizer.vocab_size(),
+            seq_len: 128,
+            dim: 128,
+            num_layers: 4,
+            num_heads: 4,
+            head_dim: 32,
+            ffn_dim: 256,
+            label_smoothing,
+            z_loss_weight,
+        }
     };
 
     let mut model = ModelWeights::new(config.clone(), &mut rng);
     let total_params = model.params.len();
-    println!("  - パラメータ総数: {} (約 {:.2} K params)", total_params, total_params as f32 / 1000.0);
+    println!("  - モデル構造: 文脈長 {}文字, 隠れ層 {}次元, レイヤー数 {}, アテンションHead {}",
+        config.seq_len, config.dim, config.num_layers, config.num_heads);
+    println!("  - パラメータ総数: {} (約 {:.2} M params)", total_params, total_params as f32 / 1_000_000.0);
     println!("  - 正則化・損失関数: Label Smoothing ({:.2}) + Z-loss ({:e})", config.label_smoothing, config.z_loss_weight);
 
     // チェックポイントの自動検出と再開 (latest & best)
-    let checkpoint_dir = base_dir.join("checkpoints").join("latest");
-    let best_checkpoint_dir = base_dir.join("checkpoints").join("best");
     let mut start_step = 1;
     let mut current_seed = seed;
     let mut best_val_loss = if !reset_mode && best_checkpoint_dir.join("meta.json").exists() {
