@@ -9,17 +9,19 @@ mod cleaner;
 mod egov;
 mod arxiv;
 mod techdocs;
+mod code;
 
 use aozora::AozoraPipeline;
 use egov::EgovPipeline;
 use arxiv::ArxivPipeline;
 use techdocs::TechDocsPipeline;
+use code::CodePipeline;
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
     println!(" 📚 ONIWA: クリーン・オープンデータ収集パイプライン");
-    println!("    (青空文庫PD ＆ e-Gov法令 ＆ arXivオープンサイエンス ＆ 公式技術仕様)");
+    println!("    (青空文庫PD ＆ e-Gov法令 ＆ arXivオープンサイエンス ＆ 公式技術仕様 ＆ クリーンコード)");
     println!("============================================================\n");
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -31,12 +33,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut egov_pipeline = EgovPipeline::new(&data_dir, &logs_dir);
     let mut arxiv_pipeline = ArxivPipeline::new(&data_dir, &logs_dir);
     let mut techdocs_pipeline = TechDocsPipeline::new(&data_dir, &logs_dir);
+    let mut code_pipeline = CodePipeline::new(&data_dir, &logs_dir);
 
     let args: Vec<String> = std::env::args().collect();
     let mut do_preset = false;
     let mut do_laws = false;
     let mut do_arxiv = false;
     let mut do_techdocs = false;
+    let mut do_code = false;
     let mut arxiv_limit = 10usize;
     let mut arxiv_cat = "cs.AI".to_string();
     let mut do_all = false;
@@ -81,11 +85,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--techdocs" => {
                 do_techdocs = true;
             }
+            "--code" => {
+                do_code = true;
+            }
             "--all" => {
                 do_all = true;
                 do_preset = true;
                 do_laws = true;
                 do_techdocs = true;
+                do_code = true;
                 do_arxiv = true;
                 arxiv_limit = 5;
                 do_build = true;
@@ -123,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         i += 1;
     }
 
-    if !do_preset && !do_laws && !do_arxiv && !do_techdocs && !do_all && target_recipe.is_none() && target_author.is_none() && !do_build && !do_status && !do_clean {
+    if !do_preset && !do_laws && !do_arxiv && !do_techdocs && !do_code && !do_all && target_recipe.is_none() && target_author.is_none() && !do_build && !do_status && !do_clean {
         print_help();
         return Ok(());
     }
@@ -133,6 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         egov_pipeline.set_force(true);
         arxiv_pipeline.set_force(true);
         techdocs_pipeline.set_force(true);
+        code_pipeline.set_force(true);
     }
 
     // 0. クリーン・リセット処理
@@ -162,18 +171,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         techdocs_pipeline.ingest_default_techdocs()?;
     }
 
-    // 5. arXiv: オープンサイエンス論文アブストラクトの取得
+    // 5. 基本アルゴリズム・クリーンコード（Python/Rust）の取得
+    if do_code {
+        code_pipeline.ingest_default_code()?;
+    }
+
+    // 6. arXiv: オープンサイエンス論文アブストラクトの取得
     if do_arxiv {
         arxiv_pipeline.ingest_category(&arxiv_cat, arxiv_limit)?;
     }
 
-    // 6. 統合コーパスの再生成 (全ソースの corpus/*.txt を一括結合)
-    if do_build || do_preset || do_laws || do_techdocs || do_arxiv || do_all || target_recipe.is_some() {
+    // 7. 統合コーパスの再生成 (全ソースの corpus/*.txt を一括結合)
+    if do_build || do_preset || do_laws || do_techdocs || do_code || do_arxiv || do_all || target_recipe.is_some() {
         aozora_pipeline.build_combined_corpus()?;
     }
 
-    // 7. ステータス表示
-    if do_status || (!do_preset && !do_laws && !do_techdocs && !do_arxiv && !do_all && target_recipe.is_none() && !do_build) {
+    // 8. ステータス表示
+    if do_status || (!do_preset && !do_laws && !do_techdocs && !do_code && !do_arxiv && !do_all && target_recipe.is_none() && !do_build) {
         show_status(&data_dir, &logs_dir)?;
     }
 
@@ -189,10 +203,11 @@ fn print_help() {
     println!("【使い方】");
     println!("  cargo run --release -p oniwa-pipeline -- [オプション]\n");
     println!("【オプション】");
-    println!("  --all               全ソース（青空文庫＋法令＋技術ドキュメント＋arXiv）を一括取得し、統合コーパスを再生成");
+    println!("  --all               全ソース（青空文庫＋法令＋技術＋コード＋arXiv）を一括取得し、統合コーパスを再生成");
     println!("  --preset            青空文庫の代表的な名作群（recipes.json 設定作品群）を一括取得");
     println!("  --laws              e-Gov APIから日本国憲法・刑法・著作権法・民法等の基本法令を一括取得");
-    println!("  --techdocs          公式オープンソース技術ドキュメント（Rust公式解説・コード実例等）を一括取得");
+    println!("  --techdocs          公式オープンソース技術ドキュメント（Rust公式解説等）を一括取得");
+    println!("  --code              オープンソース基本アルゴリズムコード（Python/Rust、階乗/フィボナッチ/探索/ソート等）を一括取得");
     println!("  --arxiv [件数]      arXiv APIから人工知能・自然言語処理等のオープンアクセス論文要約を取得 (デフォルト: 10)");
     println!("  --arxiv-cat <分野>  arXiv検索カテゴリ指定 (例: cs.AI, cs.CL, cs.LG / デフォルト: cs.AI)");
     println!("  --recipe <パス>     JSONレシピファイルに基づいて指定作品群を一括取得（例: pipelines/config/recipes.json）");
