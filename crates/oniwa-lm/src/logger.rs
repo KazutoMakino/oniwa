@@ -175,7 +175,9 @@ impl ProvenanceLedger {
 /// 現在時刻を ISO 8601 (UTC, 例: "2026-09-15T13:45:30Z") 形式で生成
 pub fn current_timestamp_utc() -> String {
     let now = std::time::SystemTime::now();
-    let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let duration = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
     let total_secs = duration.as_secs();
 
     let sec = total_secs % 60;
@@ -196,7 +198,18 @@ pub fn current_timestamp_utc() -> String {
 
     let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
     let days_in_months = [
-        31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
     ];
     let mut month = 1;
     for &dim in &days_in_months {
@@ -229,7 +242,9 @@ pub fn get_git_commit_hash() -> String {
         .ok()
         .and_then(|out| {
             if out.status.success() {
-                String::from_utf8(out.stdout).ok().map(|s| s.trim().to_string())
+                String::from_utf8(out.stdout)
+                    .ok()
+                    .map(|s| s.trim().to_string())
             } else {
                 None
             }
@@ -295,7 +310,8 @@ mod tests {
             .record(&ProvenanceEvent::DataIngestion(DataIngestionLog {
                 timestamp_utc: "2026-09-14T09:10:00Z".into(),
                 source_name: "青空文庫 (芥川龍之介 羅生門)".into(),
-                source_url_or_path: "https://www.aozora.gr.jp/cards/000879/files/127_15260.html".into(),
+                source_url_or_path: "https://www.aozora.gr.jp/cards/000879/files/127_15260.html"
+                    .into(),
                 license: "Public Domain".into(),
                 raw_data_sha256: "11223344".into(),
                 raw_data_bytes: 15420,

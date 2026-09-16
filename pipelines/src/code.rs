@@ -496,8 +496,15 @@ impl CodePipeline {
     }
 
     /// 単一のコードターゲットを取得またはシードから展開
-    pub fn fetch_or_seed(&self, target: &CodeSnippetTarget) -> Result<(String, String), Box<dyn std::error::Error>> {
-        let ext = if target.language == "python" { "py" } else { "rs" };
+    pub fn fetch_or_seed(
+        &self,
+        target: &CodeSnippetTarget,
+    ) -> Result<(String, String), Box<dyn std::error::Error>> {
+        let ext = if target.language == "python" {
+            "py"
+        } else {
+            "rs"
+        };
         let raw_filename = format!("code_{}.{}", target.name, ext);
         let raw_path = self.raw_dir.join(&raw_filename);
 
@@ -511,7 +518,8 @@ impl CodePipeline {
         // URL指定があればダウンロードを試行
         if let Some(url) = target.url {
             println!("  📥 [Code] ダウンロード試行: 『{}』 ...", target.title);
-            let user_agent = "oniwa-pipeline/0.1.0 (Ethical Open Source Code Ingestion; Educational AI)";
+            let user_agent =
+                "oniwa-pipeline/0.1.0 (Ethical Open Source Code Ingestion; Educational AI)";
             let status = Command::new("curl")
                 .arg("-s")
                 .arg("-f")
@@ -533,7 +541,10 @@ impl CodePipeline {
                     return Ok((content, sha));
                 }
             }
-            println!("  ⚠️ ダウンロード失敗またはタイムアウト。高品質シードコードを展開します: 『{}』", target.title);
+            println!(
+                "  ⚠️ ダウンロード失敗またはタイムアウト。高品質シードコードを展開します: 『{}』",
+                target.title
+            );
         }
 
         // フォールバック: シードコードの書き出し
@@ -543,7 +554,10 @@ impl CodePipeline {
     }
 
     /// 単一コードを前処理してコーパスに保存し、監査台帳に記録
-    pub fn ingest_single_code(&self, target: &CodeSnippetTarget) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    pub fn ingest_single_code(
+        &self,
+        target: &CodeSnippetTarget,
+    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let (raw_content, raw_sha) = self.fetch_or_seed(target)?;
 
         // コードのクレンジング & 正規化
@@ -592,7 +606,10 @@ impl CodePipeline {
 
         let mut paths = Vec::new();
         for target in DEFAULT_CODE_TARGETS {
-            println!("▶ 『{}』 [{}]: {}", target.title, target.language, target.description);
+            println!(
+                "▶ 『{}』 [{}]: {}",
+                target.title, target.language, target.description
+            );
             let path = self.ingest_single_code(target)?;
             paths.push(path);
         }

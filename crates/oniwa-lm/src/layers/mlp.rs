@@ -156,7 +156,9 @@ mod tests {
         let ffn = 8;
 
         let inp: Vec<f32> = (0..n * c).map(|i| (i as f32 * 0.1).sin()).collect();
-        let w_gate_up: Vec<f32> = (0..c * 2 * ffn).map(|i| (i as f32 * 0.2).cos() * 0.1).collect();
+        let w_gate_up: Vec<f32> = (0..c * 2 * ffn)
+            .map(|i| (i as f32 * 0.2).cos() * 0.1)
+            .collect();
         let w_down: Vec<f32> = (0..ffn * c).map(|i| (i as f32 * 0.3).sin() * 0.1).collect();
 
         let mut out = vec![0.0f32; n * c];
@@ -165,16 +167,7 @@ mod tests {
         let mut act_h = vec![0.0f32; n * ffn];
 
         SwiGLU::forward(
-            &mut out,
-            &mut act_g,
-            &mut act_u,
-            &mut act_h,
-            &inp,
-            &w_gate_up,
-            &w_down,
-            n,
-            c,
-            ffn,
+            &mut out, &mut act_g, &mut act_u, &mut act_h, &inp, &w_gate_up, &w_down, n, c, ffn,
         );
 
         let dout: Vec<f32> = (0..n * c).map(|i| (i as f32 * 0.5).cos()).collect();
@@ -213,8 +206,30 @@ mod tests {
             let mut dummy_u = vec![0.0f32; n * ffn];
             let mut dummy_h = vec![0.0f32; n * ffn];
 
-            SwiGLU::forward(&mut out_pos, &mut dummy_g, &mut dummy_u, &mut dummy_h, &inp_pos, &w_gate_up, &w_down, n, c, ffn);
-            SwiGLU::forward(&mut out_neg, &mut dummy_g, &mut dummy_u, &mut dummy_h, &inp_neg, &w_gate_up, &w_down, n, c, ffn);
+            SwiGLU::forward(
+                &mut out_pos,
+                &mut dummy_g,
+                &mut dummy_u,
+                &mut dummy_h,
+                &inp_pos,
+                &w_gate_up,
+                &w_down,
+                n,
+                c,
+                ffn,
+            );
+            SwiGLU::forward(
+                &mut out_neg,
+                &mut dummy_g,
+                &mut dummy_u,
+                &mut dummy_h,
+                &inp_neg,
+                &w_gate_up,
+                &w_down,
+                n,
+                c,
+                ffn,
+            );
 
             let mut loss_pos = 0.0f32;
             let mut loss_neg = 0.0f32;

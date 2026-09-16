@@ -150,12 +150,18 @@ impl ModelLayout {
 
         let mut layers = Vec::with_capacity(l);
         for _ in 0..l {
-            let rms_att = offset; offset += c;
-            let qkv = offset; offset += c * 3 * c;
-            let att_proj = offset; offset += c * c;
-            let rms_ffn = offset; offset += c;
-            let gate_up = offset; offset += c * 2 * ffn;
-            let down = offset; offset += ffn * c;
+            let rms_att = offset;
+            offset += c;
+            let qkv = offset;
+            offset += c * 3 * c;
+            let att_proj = offset;
+            offset += c * c;
+            let rms_ffn = offset;
+            offset += c;
+            let gate_up = offset;
+            offset += c * 2 * ffn;
+            let down = offset;
+            offset += ffn * c;
 
             layers.push(LayerParamOffsets {
                 rms_att,
@@ -167,7 +173,8 @@ impl ModelLayout {
             });
         }
 
-        let rms_final = offset; offset += c;
+        let rms_final = offset;
+        offset += c;
         let lm_head = offset;
 
         Self {
@@ -304,7 +311,10 @@ impl ModelWeights {
             "git_commit_hash": crate::logger::get_git_commit_hash(),
             "git_dirty": crate::logger::get_git_dirty(),
         });
-        std::fs::write(dir_p.join("meta.json"), serde_json::to_string_pretty(&meta)?)?;
+        std::fs::write(
+            dir_p.join("meta.json"),
+            serde_json::to_string_pretty(&meta)?,
+        )?;
 
         // 2. 生バイナリ (params, m, v を1つのファイルに連続書き出し)
         let mut f = std::io::BufWriter::new(std::fs::File::create(dir_p.join("weights.bin"))?);
@@ -367,13 +377,7 @@ impl ModelWeights {
     }
 
     /// フルTransformerの順伝播・逆伝播・勾配蓄積・損失計算
-    pub fn forward_backward(
-        &mut self,
-        x: &[u16],
-        y: &[u16],
-        b: usize,
-        t: usize,
-    ) -> (f32, f32) {
+    pub fn forward_backward(&mut self, x: &[u16], y: &[u16], b: usize, t: usize) -> (f32, f32) {
         let n = b * t;
         let c = self.config.dim;
         let v = self.config.vocab_size;
@@ -397,22 +401,22 @@ impl ModelWeights {
         // 各レイヤーの中間テンソルを保持するキャッシュ
         #[allow(dead_code)]
         struct LayerActivations {
-            x_in: Vec<f32>,       // [N, C]
-            norm1: Vec<f32>,      // [N, C]
-            rstd1: Vec<f32>,      // [N]
-            q: Vec<f32>,          // [N, C]
-            k: Vec<f32>,          // [N, C]
-            val: Vec<f32>,        // [N, C]
-            att: Vec<f32>,        // [NH, N, T]
-            att_out: Vec<f32>,    // [N, C]
-            post_att: Vec<f32>,   // [N, C]
-            x_mid: Vec<f32>,      // [N, C]
-            norm2: Vec<f32>,      // [N, C]
-            rstd2: Vec<f32>,      // [N]
-            act_g: Vec<f32>,      // [N, FFN]
-            act_u: Vec<f32>,      // [N, FFN]
-            act_h: Vec<f32>,      // [N, FFN]
-            post_mlp: Vec<f32>,   // [N, C]
+            x_in: Vec<f32>,     // [N, C]
+            norm1: Vec<f32>,    // [N, C]
+            rstd1: Vec<f32>,    // [N]
+            q: Vec<f32>,        // [N, C]
+            k: Vec<f32>,        // [N, C]
+            val: Vec<f32>,      // [N, C]
+            att: Vec<f32>,      // [NH, N, T]
+            att_out: Vec<f32>,  // [N, C]
+            post_att: Vec<f32>, // [N, C]
+            x_mid: Vec<f32>,    // [N, C]
+            norm2: Vec<f32>,    // [N, C]
+            rstd2: Vec<f32>,    // [N]
+            act_g: Vec<f32>,    // [N, FFN]
+            act_u: Vec<f32>,    // [N, FFN]
+            act_h: Vec<f32>,    // [N, FFN]
+            post_mlp: Vec<f32>, // [N, C]
         }
 
         let mut layer_acts = Vec::with_capacity(l);
@@ -521,7 +525,14 @@ impl ModelWeights {
         let mut final_norm = vec![0.0f32; n * c];
         let mut rstd_final = vec![0.0f32; n];
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
-        RMSNorm::forward(&mut final_norm, &mut rstd_final, &x_final_in, rms_final_w, 1e-5, c);
+        RMSNorm::forward(
+            &mut final_norm,
+            &mut rstd_final,
+            &x_final_in,
+            rms_final_w,
+            1e-5,
+            c,
+        );
 
         // LM Head: final_norm [N, C] * lm_head [C, V] -> logits [N, V]
         let lm_head_w = &self.params[layout.lm_head..layout.lm_head + c * v];
@@ -576,20 +587,24 @@ impl ModelWeights {
             };
 
             // 2. Z-loss Regularization: cz * (ln Z)^2
-            let z_loss = if cz > 0.0 {
-                cz * log_z * log_z
-            } else {
-                0.0
-            };
+            let z_loss = if cz > 0.0 { cz * log_z * log_z } else { 0.0 };
 
             total_loss += token_loss + z_loss;
 
             // 3. Analytic Gradient:
             // dL/dz_j = P(j) * (1 + 2 * cz * log_z) - q(j)
-            let z_grad_factor = if cz > 0.0 { 1.0 + 2.0 * cz * log_z } else { 1.0 };
+            let z_grad_factor = if cz > 0.0 {
+                1.0 + 2.0 * cz * log_z
+            } else {
+                1.0
+            };
             for j in 0..v {
                 let p = logits_row[j];
-                let q = if j == target { target_weight } else { smooth_uniform };
+                let q = if j == target {
+                    target_weight
+                } else {
+                    smooth_uniform
+                };
                 let dl = p * z_grad_factor - q;
                 dlogits[i * v + j] = dl / (n as f32);
             }
@@ -745,13 +760,7 @@ impl ModelWeights {
     }
 
     /// 評価用: 順伝播のみでクロスエントロピー損失を計算 (逆伝播なし・勾配更新なし)
-    pub fn evaluate_loss(
-        &self,
-        x: &[u16],
-        y: &[u16],
-        b: usize,
-        t: usize,
-    ) -> f32 {
+    pub fn evaluate_loss(&self, x: &[u16], y: &[u16], b: usize, t: usize) -> f32 {
         self.evaluate_loss_and_top_k(x, y, b, t, 1).0
     }
 
@@ -859,7 +868,14 @@ impl ModelWeights {
         let mut final_norm = vec![0.0f32; n * c];
         let mut rstd_final = vec![0.0f32; n];
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
-        RMSNorm::forward(&mut final_norm, &mut rstd_final, &x_curr, rms_final_w, 1e-5, c);
+        RMSNorm::forward(
+            &mut final_norm,
+            &mut rstd_final,
+            &x_curr,
+            rms_final_w,
+            1e-5,
+            c,
+        );
 
         // LM Head & CrossEntropy & Top-k
         let lm_head_w = &self.params[layout.lm_head..layout.lm_head + c * v];
@@ -1015,7 +1031,14 @@ impl ModelWeights {
         let mut final_norm = vec![0.0f32; t * c];
         let mut rstd_final = vec![0.0f32; t];
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
-        RMSNorm::forward(&mut final_norm, &mut rstd_final, &x_curr, rms_final_w, 1e-5, c);
+        RMSNorm::forward(
+            &mut final_norm,
+            &mut rstd_final,
+            &x_curr,
+            rms_final_w,
+            1e-5,
+            c,
+        );
 
         // 最後のトークン (t - 1) に対する Logits
         let last_norm_row = &final_norm[(t - 1) * c..t * c];
@@ -1064,7 +1087,12 @@ mod tests {
         // forward_backward による損失
         let (fb_loss, _) = model.forward_backward(&x, &y, b, t);
 
-        assert!((eval_loss - fb_loss).abs() < 1e-5, "eval_loss: {}, fb_loss: {}", eval_loss, fb_loss);
+        assert!(
+            (eval_loss - fb_loss).abs() < 1e-5,
+            "eval_loss: {}, fb_loss: {}",
+            eval_loss,
+            fb_loss
+        );
         assert!(!eval_loss.is_nan());
         assert!(eval_loss > 0.0);
     }

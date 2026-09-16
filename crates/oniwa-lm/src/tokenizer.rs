@@ -129,7 +129,8 @@ impl CharTokenizer {
         let tokenized_sha256 = crate::reproducibility::compute_checksum_bytes(&bin_bytes);
 
         // 系譜台帳 (ledger_index.jsonl) への記録
-        let mut ledger = crate::logger::ProvenanceLedger::open(logs_dir_p.join("ledger_index.jsonl"))?;
+        let mut ledger =
+            crate::logger::ProvenanceLedger::open(logs_dir_p.join("ledger_index.jsonl"))?;
         ledger.record(&crate::logger::ProvenanceEvent::DataIngestion(
             crate::logger::DataIngestionLog {
                 timestamp_utc: crate::logger::current_timestamp_utc(),

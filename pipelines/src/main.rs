@@ -5,18 +5,18 @@
 //! 青空文庫の名作群を安全に取得・クレンジング・系譜台帳に記録します。
 
 mod aozora;
-mod cleaner;
-mod egov;
 mod arxiv;
-mod techdocs;
+mod cleaner;
 mod code;
+mod egov;
+mod techdocs;
 
 use aozora::AozoraPipeline;
-use egov::EgovPipeline;
 use arxiv::ArxivPipeline;
-use techdocs::TechDocsPipeline;
 use code::CodePipeline;
+use egov::EgovPipeline;
 use std::path::Path;
+use techdocs::TechDocsPipeline;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
@@ -131,7 +131,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         i += 1;
     }
 
-    if !do_preset && !do_laws && !do_arxiv && !do_techdocs && !do_code && !do_all && target_recipe.is_none() && target_author.is_none() && !do_build && !do_status && !do_clean {
+    if !do_preset
+        && !do_laws
+        && !do_arxiv
+        && !do_techdocs
+        && !do_code
+        && !do_all
+        && target_recipe.is_none()
+        && target_author.is_none()
+        && !do_build
+        && !do_status
+        && !do_clean
+    {
         print_help();
         return Ok(());
     }
@@ -182,12 +193,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 7. 統合コーパスの再生成 (全ソースの corpus/*.txt を一括結合)
-    if do_build || do_preset || do_laws || do_techdocs || do_code || do_arxiv || do_all || target_recipe.is_some() {
+    if do_build
+        || do_preset
+        || do_laws
+        || do_techdocs
+        || do_code
+        || do_arxiv
+        || do_all
+        || target_recipe.is_some()
+    {
         aozora_pipeline.build_combined_corpus()?;
     }
 
     // 8. ステータス表示
-    if do_status || (!do_preset && !do_laws && !do_techdocs && !do_code && !do_arxiv && !do_all && target_recipe.is_none() && !do_build) {
+    if do_status
+        || (!do_preset
+            && !do_laws
+            && !do_techdocs
+            && !do_code
+            && !do_arxiv
+            && !do_all
+            && target_recipe.is_none()
+            && !do_build)
+    {
         show_status(&data_dir, &logs_dir)?;
     }
 
@@ -205,18 +233,28 @@ fn print_help() {
     println!("【オプション】");
     println!("  --all               全ソース（青空文庫＋法令＋技術＋コード＋arXiv）を一括取得し、統合コーパスを再生成");
     println!("  --preset            青空文庫の代表的な名作群（recipes.json 設定作品群）を一括取得");
-    println!("  --laws              e-Gov APIから日本国憲法・刑法・著作権法・民法等の基本法令を一括取得");
-    println!("  --techdocs          公式オープンソース技術ドキュメント（Rust公式解説等）を一括取得");
+    println!(
+        "  --laws              e-Gov APIから日本国憲法・刑法・著作権法・民法等の基本法令を一括取得"
+    );
+    println!(
+        "  --techdocs          公式オープンソース技術ドキュメント（Rust公式解説等）を一括取得"
+    );
     println!("  --code              オープンソース基本アルゴリズムコード（Python/Rust、階乗/フィボナッチ/探索/ソート等）を一括取得");
     println!("  --arxiv [件数]      arXiv APIから人工知能・自然言語処理等のオープンアクセス論文要約を取得 (デフォルト: 10)");
-    println!("  --arxiv-cat <分野>  arXiv検索カテゴリ指定 (例: cs.AI, cs.CL, cs.LG / デフォルト: cs.AI)");
+    println!(
+        "  --arxiv-cat <分野>  arXiv検索カテゴリ指定 (例: cs.AI, cs.CL, cs.LG / デフォルト: cs.AI)"
+    );
     println!("  --recipe <パス>     JSONレシピファイルに基づいて指定作品群を一括取得（例: pipelines/config/recipes.json）");
-    println!("  --author <名前>     指定した著者の著作権満了作品を青空文庫全作品リストから検索して取得");
+    println!(
+        "  --author <名前>     指定した著者の著作権満了作品を青空文庫全作品リストから検索して取得"
+    );
     println!("  --limit <数>        著者検索時の取得上限作品数 (デフォルト: 5)");
     println!("  --build             収集済みテキスト群を統合して tokens.bin & vocab.json を生成");
     println!("  --force             キャッシュを無視して強制的に再ダウンロード & 再解析");
     println!("  --clean             収集データ・コーパス・台帳を初期化（既存台帳はバックアップ）");
-    println!("  --status            現在収集されている作品・法令・論文一覧と系譜台帳の状況を表示\n");
+    println!(
+        "  --status            現在収集されている作品・法令・論文一覧と系譜台帳の状況を表示\n"
+    );
     println!("【使用例】");
     println!("  $ cargo run --release -p oniwa-pipeline -- --all");
     println!("  $ cargo run --release -p oniwa-pipeline -- --techdocs");
@@ -246,7 +284,8 @@ fn show_status(data_dir: &Path, logs_dir: &Path) -> Result<(), Box<dyn std::erro
             let content = std::fs::read_to_string(&path).unwrap_or_default();
             let chars = content.chars().count();
             total_chars += chars;
-            println!("  [{:2}] {:<35} ({:6} 文字, {:.1} KB)",
+            println!(
+                "  [{:2}] {:<35} ({:6} 文字, {:.1} KB)",
                 idx + 1,
                 path.file_name().unwrap_or_default().to_string_lossy(),
                 chars,
@@ -262,9 +301,7 @@ fn show_status(data_dir: &Path, logs_dir: &Path) -> Result<(), Box<dyn std::erro
 
     println!("\n 📜 監査台帳 (logs/ledger_index.jsonl):");
     if ledger_path.exists() {
-        let count = std::fs::read_to_string(&ledger_path)?
-            .lines()
-            .count();
+        let count = std::fs::read_to_string(&ledger_path)?.lines().count();
         println!("  - 記録された監査・系譜イベント数: {} 件", count);
     }
 

@@ -62,7 +62,9 @@ impl ArxivPipeline {
         max_results: usize,
     ) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let clean_cat = category.replace(':', "_");
-        let dest_path = self.raw_dir.join(format!("arxiv_{}_{}.xml", clean_cat, max_results));
+        let dest_path = self
+            .raw_dir
+            .join(format!("arxiv_{}_{}.xml", clean_cat, max_results));
 
         if !self.force_download && dest_path.exists() && dest_path.metadata()?.len() > 0 {
             return Ok(dest_path);
@@ -72,9 +74,13 @@ impl ArxivPipeline {
             "https://export.arxiv.org/api/query?search_query=cat:{}&max_results={}&sortBy=submittedDate&sortOrder=descending",
             category, max_results
         );
-        println!("  📥 [arXiv API] 論文フィード取得中: {} (最大 {} 件) ...", category, max_results);
+        println!(
+            "  📥 [arXiv API] 論文フィード取得中: {} (最大 {} 件) ...",
+            category, max_results
+        );
 
-        let user_agent = "oniwa-pipeline/0.1.0 (Ethical Open Science AI Data Ingestion; Educational Project)";
+        let user_agent =
+            "oniwa-pipeline/0.1.0 (Ethical Open Science AI Data Ingestion; Educational Project)";
         let status = Command::new("curl")
             .arg("-s")
             .arg("-f")
@@ -102,7 +108,10 @@ impl ArxivPipeline {
         max_results: usize,
     ) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
         println!("============================================================");
-        println!(" 🔬 arXiv オープンアクセス論文収集: カテゴリ「{}」 (最大 {} 件)", category, max_results);
+        println!(
+            " 🔬 arXiv オープンアクセス論文収集: カテゴリ「{}」 (最大 {} 件)",
+            category, max_results
+        );
         println!("    (根拠: arXiv.org API / オープンサイエンス・CCライセンス)");
         println!("============================================================");
 
@@ -252,7 +261,13 @@ fn decode_xml_entities(s: &str) -> String {
 fn sanitize_filename(s: &str) -> String {
     let sanitized: String = s
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .take(40)
         .collect();
     sanitized.trim_matches('_').to_string()

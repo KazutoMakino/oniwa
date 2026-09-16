@@ -144,7 +144,10 @@ mod tests {
     fn test_note_removal() {
         let input = "メロスは激怒した。［＃３字下げ］必ず、かの邪智暴虐の王を除かなければならぬと決意した。";
         let cleaned = strip_markup(input);
-        assert_eq!(cleaned, "メロスは激怒した。必ず、かの邪智暴虐の王を除かなければならぬと決意した。");
+        assert_eq!(
+            cleaned,
+            "メロスは激怒した。必ず、かの邪智暴虐の王を除かなければならぬと決意した。"
+        );
     }
 
     #[test]

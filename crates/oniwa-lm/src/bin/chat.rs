@@ -71,8 +71,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. チェックポイントの読み込み
     if !checkpoint_dir.join("meta.json").exists() {
-        eprintln!("Error: チェックポイント {:?} が見つかりません。", checkpoint_dir);
-        eprintln!("まずは `cargo run --release --bin train` で学習を実行してモデルを保存してください。");
+        eprintln!(
+            "Error: チェックポイント {:?} が見つかりません。",
+            checkpoint_dir
+        );
+        eprintln!(
+            "まずは `cargo run --release --bin train` で学習を実行してモデルを保存してください。"
+        );
         return Ok(());
     }
 
@@ -91,7 +96,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = DeterministicRng::new(12345);
     let mut model = ModelWeights::new(config.clone(), &mut rng);
 
-    println!("  🔄 チェックポイントをロード中: {} ({:?})", checkpoint_tag, checkpoint_dir);
+    println!(
+        "  🔄 チェックポイントをロード中: {} ({:?})",
+        checkpoint_tag, checkpoint_dir
+    );
     println!("  - モデル仕様: 文脈長 {}, 隠れ層 {}次元, レイヤー数 {}, 語彙数 {}, パラメータ数 {} (約 {:.2} M params)",
         config.seq_len, config.dim, config.num_layers, config.vocab_size, model.params.len(), model.params.len() as f32 / 1_000_000.0);
     let (step, loss, _) = model.load_checkpoint(&checkpoint_dir)?;

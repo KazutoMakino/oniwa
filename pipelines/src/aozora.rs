@@ -41,9 +41,9 @@ pub struct AozoraWorkEntry {
     pub author_first: String,
     pub card_url: String,
     pub text_zip_url: String,
-    pub font_type: String,     // 新字新仮名, 旧字旧仮名 等
-    pub copyright_work: bool,  // true: 著作権あり, false: なし(PD)
-    pub copyright_author: bool,// true: 著作権あり, false: なし(PD)
+    pub font_type: String,      // 新字新仮名, 旧字旧仮名 等
+    pub copyright_work: bool,   // true: 著作権あり, false: なし(PD)
+    pub copyright_author: bool, // true: 著作権あり, false: なし(PD)
 }
 
 #[allow(dead_code)]
@@ -105,7 +105,10 @@ impl AozoraPipeline {
             let backup_path = self.logs_dir.join("ledger_index_backup.jsonl");
             fs::copy(&ledger_path, &backup_path).ok();
             fs::remove_file(&ledger_path).ok();
-            println!("  📋 既存の台帳は {:?} に退避し、新規台帳を開設します", backup_path);
+            println!(
+                "  📋 既存の台帳は {:?} に退避し、新規台帳を開設します",
+                backup_path
+            );
         }
         println!("  ✅ 初期化完了！");
         Ok(())
@@ -120,7 +123,8 @@ impl AozoraPipeline {
 
         println!("  📥 ダウンロード中: {} ...", url);
         // 青空文庫サーバーへのエチケット: User-Agentを明記
-        let user_agent = "oniwa-lm/0.1.0 (Public Domain AI Training Pipeline; Ethical AI without abuse)";
+        let user_agent =
+            "oniwa-lm/0.1.0 (Public Domain AI Training Pipeline; Ethical AI without abuse)";
         let status = Command::new("curl")
             .arg("-s")
             .arg("-f")
@@ -133,7 +137,12 @@ impl AozoraPipeline {
             .status()?;
 
         if !status.success() {
-            return Err(format!("ダウンロード失敗 (curl exit code: {:?}): {}", status.code(), url).into());
+            return Err(format!(
+                "ダウンロード失敗 (curl exit code: {:?}): {}",
+                status.code(),
+                url
+            )
+            .into());
         }
 
         // サーバー負荷軽減のためのウェイト（1秒）
@@ -142,7 +151,10 @@ impl AozoraPipeline {
     }
 
     /// zipファイルからShift_JISテキストを取り出し、UTF-8に変換
-    fn extract_and_decode_zip(&self, zip_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    fn extract_and_decode_zip(
+        &self,
+        zip_path: &Path,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         let file = File::open(zip_path)?;
         let mut archive = zip::ZipArchive::new(file)?;
 
@@ -157,13 +169,20 @@ impl AozoraPipeline {
                 // Shift_JIS -> UTF-8 デコード
                 let (cow, _, had_errors) = encoding_rs::SHIFT_JIS.decode(&bytes);
                 if had_errors {
-                    eprintln!("  ⚠️ Shift_JISデコード中に一部文字の置換が発生しました: {}", name);
+                    eprintln!(
+                        "  ⚠️ Shift_JISデコード中に一部文字の置換が発生しました: {}",
+                        name
+                    );
                 }
                 return Ok(cow.into_owned());
             }
         }
 
-        Err(format!("zipファイル内に .txt が見つかりませんでした: {:?}", zip_path).into())
+        Err(format!(
+            "zipファイル内に .txt が見つかりませんでした: {:?}",
+            zip_path
+        )
+        .into())
     }
 
     /// 単一の作品を取得・クレンジングして corpus_dir に保存し、台帳に記録
@@ -210,12 +229,18 @@ impl AozoraPipeline {
             tokenizer_type: "Aozora Cleaner -> Character-level UTF-8".into(),
         }))?;
 
-        println!("  ✅ 取得 & クレンジング完了: 『{}』({} 文字)", title, char_count);
+        println!(
+            "  ✅ 取得 & クレンジング完了: 『{}』({} 文字)",
+            title, char_count
+        );
         Ok(clean_dest)
     }
 
     /// レシピ設定ファイル（JSON）に基づいて作品群を一括収集
-    pub fn ingest_from_recipe<P: AsRef<Path>>(&self, recipe_path: P) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    pub fn ingest_from_recipe<P: AsRef<Path>>(
+        &self,
+        recipe_path: P,
+    ) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
         let recipe_p = recipe_path.as_ref();
         if !recipe_p.exists() {
             return Err(format!("レシピファイル {:?} が見つかりません。", recipe_p).into());
@@ -226,7 +251,11 @@ impl AozoraPipeline {
 
         println!("============================================================");
         println!(" 📚 青空文庫パブリックドメイン・レシピ駆動データ収集");
-        println!("    (設定ファイル: {:?} / 全 {} 作品)", recipe_p, recipe.curated_works.len());
+        println!(
+            "    (設定ファイル: {:?} / 全 {} 作品)",
+            recipe_p,
+            recipe.curated_works.len()
+        );
         println!("============================================================");
 
         let mut paths = Vec::new();
@@ -242,7 +271,10 @@ impl AozoraPipeline {
                 )?;
                 paths.push(path);
             } else {
-                eprintln!("  ⚠️ 『{}』（{}）が公式インデックスで見つかりませんでした", target.title, target.author);
+                eprintln!(
+                    "  ⚠️ 『{}』（{}）が公式インデックスで見つかりませんでした",
+                    target.title, target.author
+                );
             }
         }
 
@@ -251,7 +283,9 @@ impl AozoraPipeline {
 
     /// プリセット作品群（デフォルトレシピから自動収集）
     pub fn ingest_presets(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-        let default_recipe = Path::new(env!("CARGO_MANIFEST_DIR")).join("config").join("recipes.json");
+        let default_recipe = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config")
+            .join("recipes.json");
         if default_recipe.exists() {
             self.ingest_from_recipe(&default_recipe)
         } else {
@@ -268,7 +302,10 @@ impl AozoraPipeline {
 
             println!("============================================================");
             println!(" 📚 青空文庫パブリックドメイン・プリセット作品の自動収集 (フォールバック)");
-            println!("    (対象: 著作権保護期間満了作品のみ / 全 {} 作品)", preset_targets.len());
+            println!(
+                "    (対象: 著作権保護期間満了作品のみ / 全 {} 作品)",
+                preset_targets.len()
+            );
             println!("============================================================");
 
             let mut paths = Vec::new();
@@ -284,7 +321,10 @@ impl AozoraPipeline {
                     )?;
                     paths.push(path);
                 } else {
-                    eprintln!("  ⚠️ 『{}』（{}）が公式インデックスで見つかりませんでした", title, author);
+                    eprintln!(
+                        "  ⚠️ 『{}』（{}）が公式インデックスで見つかりませんでした",
+                        title, author
+                    );
                 }
             }
 
@@ -366,7 +406,10 @@ impl AozoraPipeline {
         let index_url = "https://www.aozora.gr.jp/index_pages/list_person_all_extended_utf8.zip";
 
         println!("============================================================");
-        println!(" 🔍 青空文庫公式インデックス検索: 著者「{}」 (最大 {} 作品)", target_author, max_works);
+        println!(
+            " 🔍 青空文庫公式インデックス検索: 著者「{}」 (最大 {} 作品)",
+            target_author, max_works
+        );
         println!("============================================================");
 
         self.download_file(index_url, &index_zip)?;
@@ -408,7 +451,10 @@ impl AozoraPipeline {
                 && zip_url.starts_with("http")
                 && zip_url.ends_with(".zip")
             {
-                println!("▶ 検出: 『{}』（著: {}）- 著作権: 満了 [PD]", title, full_author);
+                println!(
+                    "▶ 検出: 『{}』（著: {}）- 著作権: 満了 [PD]",
+                    title, full_author
+                );
                 match self.ingest_single_work(
                     &full_author,
                     title,
@@ -462,14 +508,21 @@ impl AozoraPipeline {
 
         let total_chars = combined_text.chars().count();
         println!("  - 統合作品数: {} 作品", work_count);
-        println!("  - 統合文字数: {} 文字 ({:.2} KB)", total_chars, combined_text.len() as f32 / 1024.0);
+        println!(
+            "  - 統合文字数: {} 文字 ({:.2} KB)",
+            total_chars,
+            combined_text.len() as f32 / 1024.0
+        );
 
         // トークナイズと語彙生成
         let tokenizer = CharTokenizer::ingest_file(
             &combined_file,
             &self.data_dir,
             &self.logs_dir,
-            &format!("青空文庫パブリックドメイン統合コーパス ({}作品)", work_count),
+            &format!(
+                "青空文庫パブリックドメイン統合コーパス ({}作品)",
+                work_count
+            ),
             "https://www.aozora.gr.jp/",
             "Public Domain (著作権満了)",
         )?;

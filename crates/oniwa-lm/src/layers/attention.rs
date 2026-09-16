@@ -44,7 +44,7 @@ impl CausalSelfAttention {
         act_q: &mut [f32],
         act_k: &mut [f32],
         act_v: &mut [f32],
-        act_att: &mut [f32], // [B, NH, T, T] Softmax後の重み
+        act_att: &mut [f32],     // [B, NH, T, T] Softmax後の重み
         act_att_out: &mut [f32], // [B, T, C]
         inp: &[f32],
         w_qkv: &[f32],
@@ -286,7 +286,9 @@ mod tests {
         let nh = 2;
 
         let inp: Vec<f32> = (0..b * t * c).map(|i| (i as f32 * 0.1).sin()).collect();
-        let w_qkv: Vec<f32> = (0..c * 3 * c).map(|i| (i as f32 * 0.2).cos() * 0.1).collect();
+        let w_qkv: Vec<f32> = (0..c * 3 * c)
+            .map(|i| (i as f32 * 0.2).cos() * 0.1)
+            .collect();
         let w_proj: Vec<f32> = (0..c * c).map(|i| (i as f32 * 0.3).sin() * 0.1).collect();
 
         let mut out = vec![0.0f32; b * t * c];
@@ -353,8 +355,36 @@ mod tests {
             let mut a1 = vec![0.0f32; b * nh * t * t];
             let mut ao1 = vec![0.0f32; b * t * c];
 
-            CausalSelfAttention::forward(&mut out_pos, &mut q1, &mut k1, &mut v1, &mut a1, &mut ao1, &inp_pos, &w_qkv, &w_proj, b, t, c, nh);
-            CausalSelfAttention::forward(&mut out_neg, &mut q1, &mut k1, &mut v1, &mut a1, &mut ao1, &inp_neg, &w_qkv, &w_proj, b, t, c, nh);
+            CausalSelfAttention::forward(
+                &mut out_pos,
+                &mut q1,
+                &mut k1,
+                &mut v1,
+                &mut a1,
+                &mut ao1,
+                &inp_pos,
+                &w_qkv,
+                &w_proj,
+                b,
+                t,
+                c,
+                nh,
+            );
+            CausalSelfAttention::forward(
+                &mut out_neg,
+                &mut q1,
+                &mut k1,
+                &mut v1,
+                &mut a1,
+                &mut ao1,
+                &inp_neg,
+                &w_qkv,
+                &w_proj,
+                b,
+                t,
+                c,
+                nh,
+            );
 
             let mut loss_pos = 0.0f32;
             let mut loss_neg = 0.0f32;

@@ -103,7 +103,12 @@ impl EgovPipeline {
             .status()?;
 
         if !status.success() {
-            return Err(format!("e-Gov ダウンロード失敗 (curl exit code: {:?}): {}", status.code(), url).into());
+            return Err(format!(
+                "e-Gov ダウンロード失敗 (curl exit code: {:?}): {}",
+                status.code(),
+                url
+            )
+            .into());
         }
 
         // サーバー負荷軽減のためのウェイト（1秒）
@@ -112,7 +117,10 @@ impl EgovPipeline {
     }
 
     /// 法令単体をダウンロード・パース・クレンジングしてコーパスに格納し、監査台帳に記録
-    pub fn ingest_single_law(&self, target: &LawTarget) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    pub fn ingest_single_law(
+        &self,
+        target: &LawTarget,
+    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let xml_path = self.download_law_xml(target.law_id)?;
         let raw_bytes = fs::read(&xml_path)?;
         let raw_sha256 = compute_checksum_bytes(&raw_bytes);
@@ -327,7 +335,6 @@ fn decode_xml_entities(s: &str) -> String {
         .replace("&#10;", "\n")
         .replace("&#13;", "")
 }
-
 
 #[cfg(test)]
 mod tests {
