@@ -84,6 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         num_heads: 2,
         head_dim: 32,
         ffn_dim: 128,
+        ..Default::default()
     };
 
     let mut rng = DeterministicRng::new(12345);

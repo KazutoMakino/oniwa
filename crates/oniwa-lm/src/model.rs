@@ -12,7 +12,7 @@ use crate::layers::mlp::SwiGLU;
 use crate::layers::rmsnorm::RMSNorm;
 use crate::reproducibility::DeterministicRng;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModelConfig {
     pub vocab_size: usize,
     pub seq_len: usize,
@@ -21,6 +21,18 @@ pub struct ModelConfig {
     pub num_heads: usize,
     pub head_dim: usize,
     pub ffn_dim: usize,
+    #[serde(default = "default_label_smoothing")]
+    pub label_smoothing: f32,
+    #[serde(default = "default_z_loss_weight")]
+    pub z_loss_weight: f32,
+}
+
+pub fn default_label_smoothing() -> f32 {
+    0.05
+}
+
+pub fn default_z_loss_weight() -> f32 {
+    1e-4
 }
 
 impl Default for ModelConfig {
@@ -34,6 +46,8 @@ impl Default for ModelConfig {
             num_heads: 2,
             head_dim: 32, // dim / num_heads
             ffn_dim: 128,
+            label_smoothing: default_label_smoothing(),
+            z_loss_weight: default_z_loss_weight(),
         }
     }
 }
@@ -216,6 +230,8 @@ impl ModelWeights {
             "dim": self.config.dim,
             "num_layers": self.config.num_layers,
             "seq_len": self.config.seq_len,
+            "label_smoothing": self.config.label_smoothing,
+            "z_loss_weight": self.config.z_loss_weight,
             "params_checksum": crate::reproducibility::compute_checksum_f32(&self.params),
             "git_commit_hash": crate::logger::get_git_commit_hash(),
             "git_dirty": crate::logger::get_git_dirty(),
@@ -252,6 +268,12 @@ impl ModelWeights {
         let step = meta["step"].as_u64().unwrap_or(0) as usize;
         let loss = meta["loss"].as_f64().unwrap_or(0.0) as f32;
         let seed = meta["seed"].as_u64().unwrap_or(0);
+        if let Some(ls) = meta["label_smoothing"].as_f64() {
+            self.config.label_smoothing = ls as f32;
+        }
+        if let Some(zw) = meta["z_loss_weight"].as_f64() {
+            self.config.z_loss_weight = zw as f32;
+        }
 
         // 2. 生バイナリ読み込み
         let mut f = std::io::BufReader::new(std::fs::File::open(dir_p.join("weights.bin"))?);
@@ -438,40 +460,70 @@ impl ModelWeights {
         let mut total_loss = 0.0f32;
         let mut dlogits = vec![0.0f32; n * v];
 
+        let eps = self.config.label_smoothing;
+        let cz = self.config.z_loss_weight;
+        let v_f32 = v as f32;
+        let smooth_uniform = if eps > 0.0 { eps / v_f32 } else { 0.0 };
+        let target_weight = 1.0 - eps + smooth_uniform;
+
         for i in 0..n {
             let target = y[i] as usize;
             let norm_row = &final_norm[i * c..(i + 1) * c];
 
             let mut max_logit = f32::NEG_INFINITY;
             let mut logits_row = vec![0.0f32; v];
+            let mut sum_raw_logits = 0.0f32;
             for j in 0..v {
                 let mut dot = 0.0f32;
                 for k in 0..c {
                     dot += norm_row[k] * lm_head_w[k * v + j];
                 }
                 logits_row[j] = dot;
+                sum_raw_logits += dot;
                 if dot > max_logit {
                     max_logit = dot;
                 }
             }
 
-            // Softmax
+            // Softmax & Partition Function Z
             let mut sum_exp = 0.0f32;
             for val in logits_row.iter_mut() {
                 *val = (*val - max_logit).exp();
                 sum_exp += *val;
             }
+            let log_z = max_logit + sum_exp.ln();
+
             for val in logits_row.iter_mut() {
                 *val /= sum_exp;
             }
 
+            // 1. Cross Entropy with Label Smoothing
             let prob_target = logits_row[target].max(1e-15);
-            total_loss += -prob_target.ln();
+            let ce_loss = -prob_target.ln();
+            let token_loss = if eps > 0.0 {
+                // E_{q}[-ln P(j)] = (1 - eps) * ce_loss + eps * (log_z - (sum_raw_logits / V))
+                (1.0 - eps) * ce_loss + eps * (log_z - (sum_raw_logits / v_f32))
+            } else {
+                ce_loss
+            };
 
-            // dlogits = (probs - target) / N
-            logits_row[target] -= 1.0;
+            // 2. Z-loss Regularization: cz * (ln Z)^2
+            let z_loss = if cz > 0.0 {
+                cz * log_z * log_z
+            } else {
+                0.0
+            };
+
+            total_loss += token_loss + z_loss;
+
+            // 3. Analytic Gradient:
+            // dL/dz_j = P(j) * (1 + 2 * cz * log_z) - q(j)
+            let z_grad_factor = if cz > 0.0 { 1.0 + 2.0 * cz * log_z } else { 1.0 };
             for j in 0..v {
-                dlogits[i * v + j] = logits_row[j] / (n as f32);
+                let p = logits_row[j];
+                let q = if j == target { target_weight } else { smooth_uniform };
+                let dl = p * z_grad_factor - q;
+                dlogits[i * v + j] = dl / (n as f32);
             }
         }
 
@@ -928,6 +980,8 @@ mod tests {
             num_heads: 2,
             head_dim: 8,
             ffn_dim: 32,
+            label_smoothing: 0.0,
+            z_loss_weight: 0.0,
         };
         let mut model = ModelWeights::new(config, &mut rng);
 
@@ -945,5 +999,58 @@ mod tests {
         assert!((eval_loss - fb_loss).abs() < 1e-5, "eval_loss: {}, fb_loss: {}", eval_loss, fb_loss);
         assert!(!eval_loss.is_nan());
         assert!(eval_loss > 0.0);
+    }
+
+    #[test]
+    fn test_label_smoothing_and_z_loss_backward() {
+        let mut rng = DeterministicRng::new(42);
+        let config = ModelConfig {
+            vocab_size: 15,
+            seq_len: 4,
+            dim: 16,
+            num_layers: 1,
+            num_heads: 1,
+            head_dim: 16,
+            ffn_dim: 32,
+            label_smoothing: 0.05,
+            z_loss_weight: 1e-4,
+        };
+        let mut model = ModelWeights::new(config, &mut rng);
+
+        let b = 1;
+        let t = 4;
+        let x = vec![1, 2, 3, 4];
+        let y = vec![2, 3, 4, 5];
+
+        let (loss, grad_norm) = model.forward_backward(&x, &y, b, t);
+        assert!(!loss.is_nan());
+        assert!(loss > 0.0);
+        assert!(!grad_norm.is_nan());
+        assert!(grad_norm > 0.0);
+
+        // 数値勾配チェック (LM Head の一部パラメータで解析的勾配と数値微分を比較)
+        let param_idx = model.params.len() - 5;
+        let orig_val = model.params[param_idx];
+        let h = 1e-3f32;
+
+        model.params[param_idx] = orig_val + h;
+        let (loss_plus, _) = model.forward_backward(&x, &y, b, t);
+
+        model.params[param_idx] = orig_val - h;
+        let (loss_minus, _) = model.forward_backward(&x, &y, b, t);
+
+        model.params[param_idx] = orig_val;
+        model.forward_backward(&x, &y, b, t);
+        let analytical_grad = model.grads[param_idx];
+        let numerical_grad = (loss_plus - loss_minus) / (2.0 * h);
+
+        let diff = (analytical_grad - numerical_grad).abs();
+        assert!(
+            diff < 5e-3,
+            "analytical: {}, numerical: {}, diff: {}",
+            analytical_grad,
+            numerical_grad,
+            diff
+        );
     }
 }

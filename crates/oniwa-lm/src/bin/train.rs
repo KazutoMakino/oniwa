@@ -44,6 +44,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut gen_len = 30usize;
     let mut log_interval = 25usize;
     let mut run_name_arg: Option<String> = None;
+    let mut label_smoothing = 0.05f32;
+    let mut z_loss_weight = 1e-4f32;
 
     let mut i = 1;
     while i < args.len() {
@@ -104,6 +106,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--run-name" => {
                 if let Some(val) = args.get(i + 1) {
                     run_name_arg = Some(val.clone());
+                    i += 1;
+                }
+            }
+            "--label-smoothing" => {
+                if let Some(val) = args.get(i + 1) {
+                    label_smoothing = val.parse().unwrap_or(0.05);
+                    i += 1;
+                }
+            }
+            "--z-loss" => {
+                if let Some(val) = args.get(i + 1) {
+                    z_loss_weight = val.parse().unwrap_or(1e-4);
                     i += 1;
                 }
             }
@@ -177,11 +191,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         num_heads: 2,
         head_dim: 32,
         ffn_dim: 128,
+        label_smoothing,
+        z_loss_weight,
     };
 
     let mut model = ModelWeights::new(config.clone(), &mut rng);
     let total_params = model.params.len();
     println!("  - パラメータ総数: {} (約 {:.2} K params)", total_params, total_params as f32 / 1000.0);
+    println!("  - 正則化・損失関数: Label Smoothing ({:.2}) + Z-loss ({:e})", config.label_smoothing, config.z_loss_weight);
 
     // チェックポイントの自動検出と再開 (latest & best)
     let checkpoint_dir = base_dir.join("checkpoints").join("latest");
@@ -269,6 +286,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             num_heads: config.num_heads,
             num_kv_heads: config.num_heads,
             ffn_dim: config.ffn_dim,
+            label_smoothing: config.label_smoothing,
+            z_loss_weight: config.z_loss_weight,
         },
         dataset_sha256: compute_checksum_bytes(&fs::read(data_dir.join("tokens.bin"))?),
         initial_weights_sha256: init_checksum.clone(),

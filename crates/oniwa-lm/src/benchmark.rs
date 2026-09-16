@@ -468,6 +468,7 @@ mod tests {
             num_heads: 1,
             head_dim: 16,
             ffn_dim: 32,
+            ..Default::default()
         };
         let mut rng = DeterministicRng::new(42);
         let model = ModelWeights::new(config, &mut rng);
