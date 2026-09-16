@@ -91,6 +91,19 @@ pub struct TrainingStepLog {
     pub accumulated_energy_wh: f32,
     /// 重みのチェックサム (定期出力)
     pub param_checksum: Option<String>,
+    /// 多軸評価ベンチマーク (定期出力)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub benchmark: Option<BenchmarkLog>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BenchmarkLog {
+    pub top5_accuracy: f32,
+    pub cloze_top1_accuracy: f32,
+    pub cloze_top5_accuracy: f32,
+    pub syntactic_score: f32,
+    pub bracket_score: f32,
+    pub non_repetition_score: f32,
 }
 
 // ==========================================
@@ -296,6 +309,7 @@ mod tests {
                 estimated_power_w: 5.8,
                 accumulated_energy_wh: 0.15,
                 param_checksum: Some("99aabbcc".into()),
+                benchmark: None,
             }))
             .unwrap();
 

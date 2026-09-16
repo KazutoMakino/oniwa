@@ -632,6 +632,18 @@ impl ModelWeights {
         b: usize,
         t: usize,
     ) -> f32 {
+        self.evaluate_loss_and_top_k(x, y, b, t, 1).0
+    }
+
+    /// 評価用: 順伝播のみでクロスエントロピー損失と Top-k 精度 (%) を同時に計算
+    pub fn evaluate_loss_and_top_k(
+        &self,
+        x: &[u16],
+        y: &[u16],
+        b: usize,
+        t: usize,
+        k: usize,
+    ) -> (f32, f32) {
         let n = b * t;
         let c = self.config.dim;
         let v = self.config.vocab_size;
@@ -654,7 +666,7 @@ impl ModelWeights {
         let mut norm1 = vec![0.0f32; n * c];
         let mut rstd1 = vec![0.0f32; n];
         let mut q = vec![0.0f32; n * c];
-        let mut k = vec![0.0f32; n * c];
+        let mut k_vec = vec![0.0f32; n * c];
         let mut val = vec![0.0f32; n * c];
         let mut att = vec![0.0f32; b * nh * t * t];
         let mut att_out = vec![0.0f32; n * c];
@@ -679,7 +691,7 @@ impl ModelWeights {
             CausalSelfAttention::forward(
                 &mut post_att,
                 &mut q,
-                &mut k,
+                &mut k_vec,
                 &mut val,
                 &mut att,
                 &mut att_out,
@@ -729,9 +741,10 @@ impl ModelWeights {
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
         RMSNorm::forward(&mut final_norm, &mut rstd_final, &x_curr, rms_final_w, 1e-5, c);
 
-        // LM Head & CrossEntropy
+        // LM Head & CrossEntropy & Top-k
         let lm_head_w = &self.params[layout.lm_head..layout.lm_head + c * v];
         let mut total_loss = 0.0f32;
+        let mut top_k_hits = 0usize;
         let mut logits_row = vec![0.0f32; v];
 
         for i in 0..n {
@@ -741,13 +754,28 @@ impl ModelWeights {
             let mut max_logit = f32::NEG_INFINITY;
             for j in 0..v {
                 let mut dot = 0.0f32;
-                for k in 0..c {
-                    dot += norm_row[k] * lm_head_w[k * v + j];
+                for k_idx in 0..c {
+                    dot += norm_row[k_idx] * lm_head_w[k_idx * v + j];
                 }
                 logits_row[j] = dot;
                 if dot > max_logit {
                     max_logit = dot;
                 }
+            }
+
+            // Top-k check
+            let target_logit = logits_row[target];
+            let mut rank = 0;
+            for &logit in &logits_row {
+                if logit > target_logit {
+                    rank += 1;
+                    if rank >= k {
+                        break;
+                    }
+                }
+            }
+            if rank < k {
+                top_k_hits += 1;
             }
 
             // Softmax
@@ -760,7 +788,9 @@ impl ModelWeights {
             total_loss += -prob_target.ln();
         }
 
-        total_loss / (n as f32)
+        let avg_loss = total_loss / (n as f32);
+        let top_k_acc = (top_k_hits as f32 / n as f32) * 100.0;
+        (avg_loss, top_k_acc)
     }
 
     /// 推論用順伝播: 与えられたトークン列（最大seq_len）から次のトークンのLogitsを計算
