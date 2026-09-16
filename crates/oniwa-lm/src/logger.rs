@@ -68,6 +68,10 @@ pub struct ModelConfigInfo {
     pub num_heads: usize,
     pub num_kv_heads: usize,
     pub ffn_dim: usize,
+    #[serde(default)]
+    pub label_smoothing: f32,
+    #[serde(default)]
+    pub z_loss_weight: f32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
