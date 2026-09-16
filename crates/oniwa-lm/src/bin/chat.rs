@@ -76,21 +76,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let config = ModelConfig {
+    let meta_path = checkpoint_dir.join("meta.json");
+    let config = ModelConfig::from_meta_json(&meta_path).unwrap_or_else(|_| ModelConfig {
         vocab_size: tokenizer.vocab_size(),
-        seq_len: 32,
-        dim: 64,
-        num_layers: 2,
-        num_heads: 2,
+        seq_len: 128,
+        dim: 128,
+        num_layers: 4,
+        num_heads: 4,
         head_dim: 32,
-        ffn_dim: 128,
+        ffn_dim: 256,
         ..Default::default()
-    };
+    });
 
     let mut rng = DeterministicRng::new(12345);
     let mut model = ModelWeights::new(config.clone(), &mut rng);
 
     println!("  🔄 チェックポイントをロード中: {} ({:?})", checkpoint_tag, checkpoint_dir);
+    println!("  - モデル仕様: 文脈長 {}, 隠れ層 {}次元, レイヤー数 {}, 語彙数 {}, パラメータ数 {} (約 {:.2} M params)",
+        config.seq_len, config.dim, config.num_layers, config.vocab_size, model.params.len(), model.params.len() as f32 / 1_000_000.0);
     let (step, loss, _) = model.load_checkpoint(&checkpoint_dir)?;
     let model_checksum = compute_checksum_f32(&model.params);
     println!("  ✅ ロード完了！ (Step: {}, 損失: {:.4})", step, loss);
@@ -110,12 +113,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input_buffer = String::new();
 
     loop {
-        print!("あなた > ");
+        print!("oniwa-user > ");
         io::stdout().flush()?;
-
         input_buffer.clear();
         if stdin.read_line(&mut input_buffer)? == 0 {
-            break; // EOF
+            break;
         }
 
         let prompt = input_buffer.trim();
@@ -170,6 +172,8 @@ fn generate_response(
     rng: &mut DeterministicRng,
 ) -> String {
     let mut tokens = tokenizer.encode(prompt);
+    // モデルの語彙数範囲内に制限（新旧語彙差分の安全防御）
+    tokens.retain(|&id| (id as usize) < model.config.vocab_size);
     if tokens.is_empty() {
         // 未知文字ばかりの場合は先頭トークンを使用
         tokens.push(0);
