@@ -11,11 +11,14 @@ pub mod dataset;
 pub mod layers;
 pub mod loss;
 pub mod model;
+pub mod quaternion;
 
 pub use dataset::{DatasetGenerator, DocCategory};
+pub use layers::quaternion_linear::QuaternionLinear;
 pub use loss::{LossCalculator, LossConfig};
 pub use model::{DecisionConfig, DecisionModel, RawDecision};
 use oniwa_lm::tokenizer::CharTokenizer;
+pub use quaternion::Quaternion;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
