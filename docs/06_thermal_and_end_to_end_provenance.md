@@ -1,5 +1,10 @@
 # Phase 3 Addendum 2: Real-Time Dynamic Thermal Throttling & End-to-End Provenance Ledger
 
+<p align="left">
+  <b>English</b> | <a href="06_thermal_and_end_to_end_provenance.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 This document details two foundational capabilities of the "Kitchen Garden & Clean AI (`oniwa-lm`)" architecture:
 1. **Dynamic thermal throttling based on physical CPU temperature (hardware protection for edge devices)**
 2. **End-to-End Provenance Ledger covering build, data ingestion, training, and inference lifecycles**

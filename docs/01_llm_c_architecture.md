@@ -1,5 +1,10 @@
 # Phase 1: In-Depth Deconstruction of llm.c
 
+<p align="left">
+  <b>English</b> | <a href="01_llm_c_architecture.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 Andrej Karpathy's `llm.c` represents the pinnacle of minimalism: eliminating massive frameworks (PyTorch, etc.) and dynamic computational graphs entirely to realize GPT-2 pretraining using only plain C and CUDA.
 
 This document dissects the core pillars of `llm.c`—the **Flat Buffer Memory Model**, the **Manual Autograd Convention**, and the **Data Loader and Optimizer**—to extract design insights for our Pure Rust architecture.

@@ -1,5 +1,10 @@
 # Phase 2: Adaptation to Modern Transformer Primitives & Manual Derivative Derivations
 
+<p align="left">
+  <b>English</b> | <a href="02_modern_primitives.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 GPT-2, the archetype of `llm.c`, was based on the classical Transformer architecture of 2019.
 In contemporary open model designs (e.g. Gemma, Llama 3), **Modern Transformer Primitives** have become the de facto standard to eliminate computational bottlenecks, maximize representation capacity, and optimize memory bandwidth.
 

@@ -1,5 +1,10 @@
 # Phase 3 Addendum 4: Green Energy & Real-Time Power Tracking Specifications
 
+<p align="left">
+  <b>English</b> | <a href="08_green_energy_and_power_tracking.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 Training frontier AI models by mega-corporations consumes hundreds of megawatts to gigawatt-hours per run, generating environmental burdens comparable to entire small cities or nuclear plants.
 
 As a direct antithesis, `oniwa-lm` incorporates a **Green & Eco Provenance Engine** that tracks, records, and verifies **energy consumption, power dissipation, and carbon emissions at every single training step in real time**.

@@ -1,5 +1,10 @@
 # Phase 3: Rust Architecture & Safe Flat-Buffer Memory Model
 
+<p align="left">
+  <b>English</b> | <a href="03_rust_memory_model.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 How can we reconcile the extreme throughput of `llm.c`'s flat buffer model with Rust's ownership and borrow checker guarantees?
 This document defines the core Rust architecture and memory design of `oniwa-lm`.
 
