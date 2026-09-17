@@ -24,6 +24,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut lr = 0.001f32;
     let mut seed = 42u64;
 
+    let mut reset_mode = false;
+    let mut add_steps_arg: Option<usize> = None;
+
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -32,6 +35,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     num_steps = v.parse().unwrap_or(300);
                     i += 1;
                 }
+            }
+            "--add-steps" => {
+                if let Some(v) = args.get(i + 1) {
+                    add_steps_arg = v.parse().ok();
+                    i += 1;
+                }
+            }
+            "--reset" => {
+                reset_mode = true;
             }
             "--batch-size" => {
                 if let Some(v) = args.get(i + 1) {
@@ -88,6 +100,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut model = DecisionModel::new(config.clone(), &mut rng);
     let loss_config = LossConfig::default();
 
+    // Checkpoint automatic resume handling
+    let mut start_step = 1;
+    let mut best_loss = if !reset_mode && best_checkpoint_dir.join("meta.json").exists() {
+        let meta_str =
+            std::fs::read_to_string(best_checkpoint_dir.join("meta.json")).unwrap_or_default();
+        let meta: serde_json::Value = serde_json::from_str(&meta_str).unwrap_or_default();
+        meta["loss"]
+            .as_f64()
+            .map(|v| v as f32)
+            .unwrap_or(f32::INFINITY)
+    } else {
+        f32::INFINITY
+    };
+
+    if !reset_mode && checkpoint_dir.join("meta.json").exists() {
+        match model.load_checkpoint(&checkpoint_dir) {
+            Ok((resumed_step, resumed_loss)) => {
+                start_step = resumed_step + 1;
+                println!(
+                    "  🔄 Existing checkpoint detected! Resuming from Step {} (Previous Loss: {:.4})",
+                    start_step, resumed_loss
+                );
+                if !best_loss.is_infinite() {
+                    println!("  🏆 Best Recorded Loss: {:.4}", best_loss);
+                }
+            }
+            Err(e) => {
+                println!("  ⚠️ Failed to resume checkpoint (starting fresh): {}", e);
+            }
+        }
+    } else if reset_mode {
+        println!(
+            "  🔄 --reset specified: Starting fresh from Step 1 (ignoring existing checkpoints)"
+        );
+    }
+
+    let target_steps = if let Some(add) = add_steps_arg {
+        (start_step - 1) + add
+    } else if start_step > 1 && num_steps <= (start_step - 1) {
+        println!(
+            "  💡 Specified --steps ({}) is <= current step ({}). Adding {} steps (Target: Step {})",
+            num_steps,
+            start_step - 1,
+            num_steps,
+            (start_step - 1) + num_steps
+        );
+        (start_step - 1) + num_steps
+    } else {
+        num_steps
+    };
+
     let thermal = ThermalController::new(ThermalConfig::default());
     let mut power_tracker = PowerTracker::auto_detect();
 
@@ -99,17 +162,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         model.params.len()
     );
     println!(
-        "  - Training Configuration: {} steps, batch size {}, initial lr {}",
-        num_steps, batch_size, lr
+        "  - Training Range: Step {} ~ Step {} (Total: {} steps, batch size {}, initial lr {})",
+        start_step,
+        target_steps,
+        target_steps.saturating_sub(start_step - 1),
+        batch_size,
+        lr
     );
     println!(
         "  - Decision Tasks: Choice (4 categories), Noul (syntax anomaly), Score (complexity)\n"
     );
 
-    let mut best_loss = f32::INFINITY;
     let start_time = Instant::now();
 
-    for step in 1..=num_steps {
+    for step in start_step..=target_steps {
         let step_start = Instant::now();
 
         // 1. Batch generation
@@ -189,7 +255,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         // 5. AdamW optimization
-        let cur_lr = lr * (1.0 - (step as f32 / num_steps as f32) * 0.8); // Gentle linear decay
+        let cur_lr = lr * (1.0 - (step as f32 / target_steps as f32) * 0.8); // Gentle linear decay
         model.adamw_step(cur_lr, 0.01, 0.9, 0.999, 1e-8, step);
 
         // 6. Thermal control & power telemetry
@@ -198,7 +264,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reading = power_tracker.tick(calc_time, throttle_ms);
 
         // Periodic logging (every 25 steps, or first/last step)
-        if step % 25 == 0 || step == 1 || step == num_steps {
+        if step % 25 == 0 || step == start_step || step == target_steps {
             let choice_acc = (correct_choice as f32 / batch_size as f32) * 100.0;
             let noul_acc = (correct_noul as f32 / batch_size as f32) * 100.0;
             let score_mae = total_score_err / batch_size as f32;
@@ -206,7 +272,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!(
                 "Step {:4}/{} | Loss: {:.4} | Choice Acc: {:5.1}% | Noul Acc: {:5.1}% | Score MAE: {:.3} | Temp: {} | Power: {:.1}W",
                 step,
-                num_steps,
+                target_steps,
                 mean_loss,
                 choice_acc,
                 noul_acc,
