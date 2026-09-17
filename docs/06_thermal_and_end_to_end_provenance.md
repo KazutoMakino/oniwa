@@ -73,6 +73,6 @@ graph TD
 
 ## 3. 実装モジュール参照
 
-* **熱制御マネージャー**: [`src/thermal.rs`](file:///home/multi/GitHub/my-mono-repo/apps/niwa-lm/src/thermal.rs)
-* **統合ライフサイクル台帳**: [`src/logger.rs`](file:///home/multi/GitHub/my-mono-repo/apps/niwa-lm/src/logger.rs)
-* **決定論的再現性 & ハッシュ**: [`src/reproducibility.rs`](file:///home/multi/GitHub/my-mono-repo/apps/niwa-lm/src/reproducibility.rs)
+* **熱制御マネージャー**: [`crates/oniwa-lm/src/thermal.rs`](../crates/oniwa-lm/src/thermal.rs)
+* **統合ライフサイクル台帳**: [`crates/oniwa-lm/src/logger.rs`](../crates/oniwa-lm/src/logger.rs)
+* **決定論的再現性 & ハッシュ**: [`crates/oniwa-lm/src/reproducibility.rs`](../crates/oniwa-lm/src/reproducibility.rs)

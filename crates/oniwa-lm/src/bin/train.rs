@@ -11,7 +11,6 @@ use oniwa_lm::reproducibility::{compute_checksum_bytes, compute_checksum_f32, De
 use oniwa_lm::thermal::{ThermalConfig, ThermalController};
 use oniwa_lm::tokenizer::CharTokenizer;
 use std::fs;
-use std::path::Path;
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,9 +29,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("    Git Commit: {}{}", git_short, dirty_str);
     println!("============================================================\n");
 
-    let base_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let data_dir = base_dir.join("data");
-    let logs_dir = base_dir.join("logs");
+    let workspace_root = oniwa_lm::find_workspace_root();
+    let data_dir = workspace_root.join("data");
+    let logs_dir = workspace_root.join("logs");
+    let base_dir = if workspace_root.join("crates/oniwa-lm/checkpoints").is_dir() {
+        workspace_root.join("crates/oniwa-lm")
+    } else {
+        workspace_root.clone()
+    };
     let raw_text_path = data_dir.join("sangetsuki_clean.txt");
 
     // ---------------------------------------------------------

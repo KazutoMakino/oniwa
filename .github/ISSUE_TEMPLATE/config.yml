@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🔒 セキュリティ脆弱性の非公開報告
+    url: https://github.com/KazutoMakino/oniwa/security
+    about: 潜在的な脆弱性やセキュリティリスクは公開Issueではなく非公開でご報告ください。
