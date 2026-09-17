@@ -1,8 +1,8 @@
-//! oniwa-decide 決定モデル学習実行バイナリ
+//! oniwa-decide Training Binary
 //!
-//! 自己教師あり自動生成データセットを用いて、双方向 Transformer エンコーダと
-//! 3つの決定ヘッド（Choice, Noul, Score）を同時に学習します。
-//! 熱制御と消費電力測定（ピュアRust）を完全搭載。
+//! Trains a bidirectional Transformer encoder and three decision heads (Choice, Noul, Score)
+//! simultaneously using self-supervised automatically synthesized datasets.
+//! Equipped with real-time hardware thermal throttling and power tracking (Pure Rust).
 
 use oniwa_decide::{DatasetGenerator, DecisionConfig, DecisionModel, LossCalculator, LossConfig};
 use oniwa_lm::power::PowerTracker;
@@ -15,7 +15,7 @@ use std::time::Instant;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
     println!(" 🧭 ONIWA-DECIDE: TypeSafe System One Training Engine");
-    println!("    (型安全意思決定モデル学習バイナリ)");
+    println!("    (Type-safe Decision Model Training Binary)");
     println!("============================================================\n");
 
     let args: Vec<String> = env::args().collect();
@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let checkpoint_dir = base_dir.join("checkpoints").join("latest");
     let best_checkpoint_dir = base_dir.join("checkpoints").join("best");
 
-    // トークナイザとデータ生成器の準備
+    // Initialize tokenizer and dataset generator
     let vocab_path = data_dir.join("vocab.json");
     let tokenizer = if vocab_path.exists() {
         CharTokenizer::load_vocab(&vocab_path)?
@@ -92,17 +92,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut power_tracker = PowerTracker::auto_detect();
 
     println!(
-        "  - モデル規模: {} layers, {} heads, dim {} (パラメータ数: {})",
+        "  - Model Scale: {} layers, {} heads, dim {} (parameters: {})",
         config.num_layers,
         config.num_heads,
         config.dim,
         model.params.len()
     );
     println!(
-        "  - 学習ステップ数: {}, バッチサイズ: {}, 初期学習率: {}",
+        "  - Training Configuration: {} steps, batch size {}, initial lr {}",
         num_steps, batch_size, lr
     );
-    println!("  - 決定タスク: Choice (4種別), Noul (構文異常), Score (複雑度)\n");
+    println!(
+        "  - Decision Tasks: Choice (4 categories), Noul (syntax anomaly), Score (complexity)\n"
+    );
 
     let mut best_loss = f32::INFINITY;
     let start_time = Instant::now();
@@ -110,15 +112,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for step in 1..=num_steps {
         let step_start = Instant::now();
 
-        // 1. バッチ生成
+        // 1. Batch generation
         let (tokens, target_choices, target_nouls, target_scores) =
             dataset.generate_batch(&tokenizer, batch_size, config.seq_len, &mut rng);
 
-        // 2. 順伝播
+        // 2. Forward pass
         model.zero_grad();
         let cache = model.forward(&tokens, batch_size, config.seq_len);
 
-        // 3. 損失計算
+        // 3. Loss computation
         let mut total_loss = 0.0f32;
         let mut dchoice_logits = vec![0.0f32; batch_size * config.num_choices];
         let mut dnoul_logits = vec![0.0f32; batch_size];
@@ -175,7 +177,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mean_loss = total_loss / (batch_size as f32);
 
-        // 4. 逆伝播
+        // 4. Backward pass
         model.backward(
             &tokens,
             &cache,
@@ -186,16 +188,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             config.seq_len,
         );
 
-        // 5. AdamW 最適化
-        let cur_lr = lr * (1.0 - (step as f32 / num_steps as f32) * 0.8); // 緩やかなLinear Decay
+        // 5. AdamW optimization
+        let cur_lr = lr * (1.0 - (step as f32 / num_steps as f32) * 0.8); // Gentle linear decay
         model.adamw_step(cur_lr, 0.01, 0.9, 0.999, 1e-8, step);
 
-        // 6. 熱制御 & 電力追跡
+        // 6. Thermal control & power telemetry
         let calc_time = step_start.elapsed().as_millis();
         let (cpu_temp, throttle_ms) = thermal.step_throttle();
         let reading = power_tracker.tick(calc_time, throttle_ms);
 
-        // 定期ログ出力 (25ステップごと、または初回/最終)
+        // Periodic logging (every 25 steps, or first/last step)
         if step % 25 == 0 || step == 1 || step == num_steps {
             let choice_acc = (correct_choice as f32 / batch_size as f32) * 100.0;
             let noul_acc = (correct_noul as f32 / batch_size as f32) * 100.0;
@@ -209,11 +211,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 choice_acc,
                 noul_acc,
                 score_mae,
-                cpu_temp.map(|t| format!("{:.1}℃", t)).unwrap_or_else(|| "N/A".into()),
+                cpu_temp.map(|t| format!("{:.1}C", t)).unwrap_or_else(|| "N/A".into()),
                 reading.net_watts,
             );
 
-            // ベスト保存
+            // Save best checkpoint
             if mean_loss < best_loss {
                 best_loss = mean_loss;
                 let _ = model.save_checkpoint(&best_checkpoint_dir, step, mean_loss);
@@ -224,15 +226,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let elapsed = start_time.elapsed();
     println!("\n============================================================");
-    println!(" 🎉 oniwa-decide 学習完了！");
-    println!("  - 所要時間: {:.2?}", elapsed);
-    println!("  - 最小 Loss: {:.4}", best_loss);
+    println!(" 🎉 oniwa-decide Training Complete!");
+    println!("  - Elapsed Time: {:.2?}", elapsed);
+    println!("  - Minimum Loss: {:.4}", best_loss);
+    println!("  - Best Checkpoint Path: {:?}", best_checkpoint_dir);
     println!(
-        "  - ベストチェックポイント保存先: {:?}",
-        best_checkpoint_dir
-    );
-    println!(
-        "  - ⚡ 累積消費電力量 (Net): {:.4} Wh",
+        "  - ⚡ Cumulative Net Energy: {:.4} Wh",
         power_tracker.total_net_wh()
     );
     println!("============================================================");

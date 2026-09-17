@@ -1,9 +1,9 @@
-//! e-Gov 法令オープンデータ収集パイプライン
+//! e-Gov Legal Open Data Ingestion Pipeline
 //!
 //! ONIWA: Organic Non-datacenter Intelligence Without Abuse
-//! 著作権法第13条（権利の目的とならない著作物）に基づき、
-//! 国の基本法令（日本国憲法・刑法・民法・著作権法等）を公的APIから安全に取得・クレンジングし、
-//! 高品質な法規範・論理思考の学習データとして系譜台帳に記録します。
+//! Under Article 13 of the Japanese Copyright Act (Works not eligible for copyright),
+//! safely retrieves and cleanses basic statutory laws via public APIs
+//! and logs complete provenance for high-quality normative/logical training data.
 
 use oniwa_lm::logger::{DataIngestionLog, ProvenanceEvent, ProvenanceLedger};
 use oniwa_lm::reproducibility::compute_checksum_bytes;
@@ -24,27 +24,27 @@ pub const DEFAULT_LAWS: &[LawTarget] = &[
     LawTarget {
         law_id: "321CONSTITUTION",
         title: "日本国憲法",
-        description: "国の最高法規・基本的人権と統治機構",
+        description: "Supreme law of Japan; fundamental human rights and governance",
     },
     LawTarget {
         law_id: "140AC0000000045",
         title: "刑法",
-        description: "犯罪と刑罰に関する一般規範",
+        description: "General norms concerning crimes and penalties",
     },
     LawTarget {
         law_id: "345AC0000000048",
         title: "著作権法",
-        description: "知的創作物の保護と公正な利用に関する規範",
+        description: "Norms concerning protection and fair use of intellectual works",
     },
     LawTarget {
         law_id: "129AC0000000089",
         title: "民法",
-        description: "市民社会と財産・身分関係の基本法",
+        description: "Basic law of civil society, property, and family relations",
     },
     LawTarget {
         law_id: "322AC0000000059",
         title: "裁判所法",
-        description: "司法機関と裁判手続の基本構成",
+        description: "Basic organization of the judiciary and judicial proceedings",
     },
 ];
 
@@ -80,7 +80,7 @@ impl EgovPipeline {
         self.force_download = force;
     }
 
-    /// e-Gov API から法令 XML をダウンロード
+    /// Download statutory XML from e-Gov API
     pub fn download_law_xml(&self, law_id: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let dest_path = self.raw_dir.join(format!("egov_{}.xml", law_id));
         if !self.force_download && dest_path.exists() && dest_path.metadata()?.len() > 0 {
@@ -88,7 +88,7 @@ impl EgovPipeline {
         }
 
         let url = format!("https://elaws.e-gov.go.jp/api/1/lawdata/{}", law_id);
-        println!("  📥 [e-Gov] ダウンロード中: {} ({}) ...", law_id, url);
+        println!("  📥 [e-Gov] Downloading: {} ({}) ...", law_id, url);
 
         let user_agent = "oniwa-lm/0.1.0 (Public Domain Legal AI Pipeline; Clean Open Data)";
         let status = Command::new("curl")
@@ -104,19 +104,19 @@ impl EgovPipeline {
 
         if !status.success() {
             return Err(format!(
-                "e-Gov ダウンロード失敗 (curl exit code: {:?}): {}",
+                "e-Gov download failed (curl exit code: {:?}): {}",
                 status.code(),
                 url
             )
             .into());
         }
 
-        // サーバー負荷軽減のためのウェイト（1秒）
+        // Pacing wait (1 second) to prevent server overload
         sleep(Duration::from_millis(1000));
         Ok(dest_path)
     }
 
-    /// 法令単体をダウンロード・パース・クレンジングしてコーパスに格納し、監査台帳に記録
+    /// Download, parse, cleanse a single statute, store in corpus, and log provenance
     pub fn ingest_single_law(
         &self,
         target: &LawTarget,
@@ -126,7 +126,7 @@ impl EgovPipeline {
         let raw_sha256 = compute_checksum_bytes(&raw_bytes);
         let xml_content = String::from_utf8_lossy(&raw_bytes);
 
-        // XML から法令本文をテキストとして抽出・正規化
+        // Extract and normalize statutory text from XML
         let (extracted_title, clean_text) = parse_egov_xml(&xml_content, target.title);
 
         let out_filename = format!("法令_{}.txt", extracted_title);
@@ -137,22 +137,22 @@ impl EgovPipeline {
         let char_count = clean_text.chars().count();
 
         println!(
-            "  📜 保存完了: 『{}』 ({}文字 / {:.2} KB)",
+            "  📜 Saved: \"{}\" ({} characters / {:.2} KB)",
             extracted_title,
             char_count,
             clean_text.len() as f32 / 1024.0
         );
 
-        // 系譜台帳（Provenance Ledger）への義務的記録
+        // Mandatory record in provenance ledger
         let ledger_path = self.logs_dir.join("ledger_index.jsonl");
         let mut ledger = ProvenanceLedger::open(&ledger_path)?;
 
         let source_url = format!("https://elaws.e-gov.go.jp/api/1/lawdata/{}", target.law_id);
         ledger.record(&ProvenanceEvent::DataIngestion(DataIngestionLog {
             timestamp_utc: oniwa_lm::logger::current_timestamp_utc(),
-            source_name: format!("e-Gov法令: 『{}』", extracted_title),
+            source_name: format!("e-Gov Law: \"{}\"", extracted_title),
             source_url_or_path: source_url,
-            license: "Public Domain (著作権法第13条: 権利の目的とならない著作物)".to_string(),
+            license: "Public Domain (Article 13, Copyright Act of Japan)".to_string(),
             raw_data_sha256: raw_sha256,
             raw_data_bytes: raw_bytes.len(),
             tokenized_sha256: clean_sha256,
@@ -164,16 +164,16 @@ impl EgovPipeline {
         Ok(out_path)
     }
 
-    /// デフォルトの基本法令群を一括収集
+    /// Batch ingest default basic statutory laws
     pub fn ingest_default_laws(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
         println!("============================================================");
-        println!(" ⚖️ e-Gov 公的法令オープンデータ一括収集");
-        println!("    (根拠: 著作権法第13条 / 完全パブリックドメイン)");
+        println!(" ⚖️ e-Gov Public Statutory Open Data Batch Ingestion");
+        println!("    (Basis: Article 13 Copyright Act of Japan / Public Domain)");
         println!("============================================================");
 
         let mut paths = Vec::new();
         for target in DEFAULT_LAWS {
-            println!("▶ 『{}』 ({})", target.title, target.description);
+            println!("▶ \"{}\" ({})", target.title, target.description);
             let path = self.ingest_single_law(target)?;
             paths.push(path);
         }
@@ -182,7 +182,7 @@ impl EgovPipeline {
     }
 }
 
-/// e-Gov 法令 XML から本文（前文、条文、項、号）を自然な日本語文章として抽出
+/// Extract body text (preamble, articles, paragraphs, items) from e-Gov XML into natural prose
 pub fn parse_egov_xml(xml: &str, fallback_title: &str) -> (String, String) {
     let title = extract_tag_content(xml, "LawTitle")
         .map(|s| decode_xml_entities(&s))
@@ -193,7 +193,7 @@ pub fn parse_egov_xml(xml: &str, fallback_title: &str) -> (String, String) {
     body.push_str(&title);
     body.push_str("\n\n");
 
-    // 前文 (Preamble) の抽出
+    // Extract preamble
     if let Some(preamble) = extract_block(xml, "Preamble") {
         for sentence in extract_all_sentences(&preamble) {
             body.push_str(&sentence);
@@ -202,10 +202,10 @@ pub fn parse_egov_xml(xml: &str, fallback_title: &str) -> (String, String) {
         body.push('\n');
     }
 
-    // 本文ブロック (<MainProvision> または全文)
+    // Main provision block (<MainProvision> or entire text)
     let content_block = extract_block(xml, "MainProvision").unwrap_or_else(|| xml.to_string());
 
-    // 各条文 (<Article>) または条文がない場合は Sentence を順次走査
+    // Traverse each article (<Article>) or sentences sequentially
     let mut current_pos = 0;
     let bytes = content_block.as_bytes();
     let n = bytes.len();
@@ -217,7 +217,7 @@ pub fn parse_egov_xml(xml: &str, fallback_title: &str) -> (String, String) {
                 let abs_art_end = abs_art_start + art_end + "</Article>".len();
                 let art_xml = &content_block[abs_art_start..abs_art_end];
 
-                // 条文番号・タイトル (例: 第一条)
+                // Article number/title (e.g., Article 1)
                 let art_title = extract_tag_content(art_xml, "ArticleTitle")
                     .map(|s| decode_xml_entities(&s))
                     .unwrap_or_default();
@@ -244,7 +244,7 @@ pub fn parse_egov_xml(xml: &str, fallback_title: &str) -> (String, String) {
         break;
     }
 
-    // 条文分割が見つからなかった場合（前文のみや簡易法規など）は全 Sentence を抽出
+    // Fallback: extract all sentences if no article division is found
     if body.trim() == title {
         for sentence in extract_all_sentences(&content_block) {
             body.push_str(&sentence);
@@ -255,7 +255,7 @@ pub fn parse_egov_xml(xml: &str, fallback_title: &str) -> (String, String) {
     (title, body.trim().to_string())
 }
 
-/// 単一タグ内のテキスト抽出（最初に見つかったもの）
+/// Extract text within a single tag (first occurrence)
 fn extract_tag_content(xml: &str, tag_name: &str) -> Option<String> {
     let open_prefix = format!("<{}", tag_name);
     let close_tag = format!("</{}>", tag_name);
@@ -267,7 +267,7 @@ fn extract_tag_content(xml: &str, tag_name: &str) -> Option<String> {
     Some(xml[content_start..end].trim().to_string())
 }
 
-/// ブロックタグ全体の抽出 (<Tag...> ... </Tag>)
+/// Extract entire block tag (<Tag...> ... </Tag>)
 fn extract_block(xml: &str, tag_name: &str) -> Option<String> {
     let open_prefix = format!("<{}", tag_name);
     let close_tag = format!("</{}>", tag_name);
@@ -278,7 +278,7 @@ fn extract_block(xml: &str, tag_name: &str) -> Option<String> {
     Some(xml[start..end].to_string())
 }
 
-/// XML 内のすべての <Sentence>...</Sentence> を抽出
+/// Extract all <Sentence>...</Sentence> within XML
 fn extract_all_sentences(xml: &str) -> Vec<String> {
     let mut sentences = Vec::new();
     let mut current_pos = 0;
@@ -291,7 +291,7 @@ fn extract_all_sentences(xml: &str) -> Vec<String> {
                 if let Some(sent_end) = xml[content_start..].find("</Sentence>") {
                     let content_end = content_start + sent_end;
                     let raw_sentence = &xml[content_start..content_end];
-                    // 内部の余分な XML タグ（ルビや太字等）を除去してエンティティデコード
+                    // Strip inner XML tags (ruby, bold, etc.) and decode XML entities
                     let cleaned = strip_inner_xml_tags(raw_sentence);
                     let decoded = decode_xml_entities(&cleaned);
                     let trimmed = decoded.trim();
@@ -309,7 +309,7 @@ fn extract_all_sentences(xml: &str) -> Vec<String> {
     sentences
 }
 
-/// タグ内に入れ子になった XML タグ（<Ruby>等）の除去
+/// Strip nested XML tags (<Ruby>, etc.)
 fn strip_inner_xml_tags(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut in_tag = false;
@@ -325,7 +325,7 @@ fn strip_inner_xml_tags(s: &str) -> String {
     result
 }
 
-/// XML 特殊文字エンティティのデコード
+/// Decode XML special character entities
 fn decode_xml_entities(s: &str) -> String {
     s.replace("&lt;", "<")
         .replace("&gt;", ">")

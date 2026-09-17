@@ -1,7 +1,7 @@
-//! 文字単位トークナイザー（Character-level Tokenizer）
+//! Character-level Tokenizer
 //!
-//! 外部の巨大な辞書やPythonに依存せず、ピュアRustで日本語テキストから
-//! ユニーク文字を抽出して語彙テーブル（vocab.json）とトークンバイナリ（tokens.bin）を生成します。
+//! Generates a vocabulary table (`vocab.json`) and token binary (`tokens.bin`) from
+//! text in pure Rust without depending on external massive dictionaries or Python.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -11,14 +11,14 @@ use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CharTokenizer {
-    /// 文字 -> トークンID (決定論的順序のため BTreeMap)
+    /// Character -> Token ID (BTreeMap for deterministic ordering)
     pub char_to_id: BTreeMap<char, u16>,
-    /// トークンID -> 文字
+    /// Token ID -> Character
     pub id_to_char: Vec<char>,
 }
 
 impl CharTokenizer {
-    /// テキストから語彙テーブルを構築
+    /// Build vocabulary table from text
     pub fn build_from_text(text: &str) -> Self {
         let mut unique_chars: Vec<char> = text.chars().collect();
         unique_chars.sort();
@@ -43,14 +43,14 @@ impl CharTokenizer {
         self.id_to_char.len()
     }
 
-    /// テキストをトークン列（u16）にエンコード
+    /// Encode text into token IDs (u16)
     pub fn encode(&self, text: &str) -> Vec<u16> {
         text.chars()
             .filter_map(|ch| self.char_to_id.get(&ch).copied())
             .collect()
     }
 
-    /// トークン列（u16）を文字列にデコード
+    /// Decode token IDs (u16) into String
     pub fn decode(&self, tokens: &[u16]) -> String {
         tokens
             .iter()
@@ -58,7 +58,7 @@ impl CharTokenizer {
             .collect()
     }
 
-    /// 語彙テーブルを JSON ファイルとして保存
+    /// Save vocabulary table as JSON file
     pub fn save_vocab<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
         let file = File::create(path)?;
         let writer = BufWriter::new(file);
@@ -66,7 +66,7 @@ impl CharTokenizer {
         Ok(())
     }
 
-    /// 語彙テーブルを JSON ファイルから読み込み
+    /// Load vocabulary table from JSON file
     pub fn load_vocab<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -74,7 +74,7 @@ impl CharTokenizer {
         Ok(tokenizer)
     }
 
-    /// トークン列をリトルエンディアン u16 バイナリとして保存
+    /// Save token sequence as little-endian u16 binary
     pub fn save_tokens_bin<P: AsRef<Path>>(tokens: &[u16], path: P) -> std::io::Result<()> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
@@ -85,7 +85,7 @@ impl CharTokenizer {
         Ok(())
     }
 
-    /// トークンバイナリファイルを読み込み
+    /// Load token sequence from little-endian u16 binary file
     pub fn load_tokens_bin<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<u16>> {
         let mut file = File::open(path)?;
         let mut bytes = Vec::new();
@@ -100,7 +100,8 @@ impl CharTokenizer {
         }
         Ok(tokens)
     }
-    /// テキストファイルを読み込んでトークナイズ・語彙保存・バイナリ保存・台帳記録を一気通貫で実行
+
+    /// Read raw text file, tokenize, save vocab, save binary, and record in provenance ledger end-to-end.
     pub fn ingest_file<P: AsRef<Path>>(
         raw_text_path: P,
         data_dir: P,
@@ -120,15 +121,15 @@ impl CharTokenizer {
         std::fs::create_dir_all(data_dir_p)?;
         std::fs::create_dir_all(logs_dir_p)?;
 
-        // 語彙とバイナリの保存
+        // Save vocabulary and binary
         tokenizer.save_vocab(data_dir_p.join("vocab.json"))?;
         Self::save_tokens_bin(&tokens, data_dir_p.join("tokens.bin"))?;
 
-        // トークンバイナリのハッシュ
+        // Token binary hash
         let bin_bytes = std::fs::read(data_dir_p.join("tokens.bin"))?;
         let tokenized_sha256 = crate::reproducibility::compute_checksum_bytes(&bin_bytes);
 
-        // 系譜台帳 (ledger_index.jsonl) への記録
+        // Record in provenance ledger (ledger_index.jsonl)
         let mut ledger =
             crate::logger::ProvenanceLedger::open(logs_dir_p.join("ledger_index.jsonl"))?;
         ledger.record(&crate::logger::ProvenanceEvent::DataIngestion(
@@ -158,7 +159,7 @@ mod tests {
     fn test_char_tokenizer_roundtrip() {
         let text = "山月記。隴西の李徴は博学才頴。";
         let tokenizer = CharTokenizer::build_from_text(text);
-        assert_eq!(tokenizer.vocab_size(), 14); // 重複除外
+        assert_eq!(tokenizer.vocab_size(), 14); // Unique characters
 
         let encoded = tokenizer.encode(text);
         assert_eq!(encoded.len(), text.chars().count());

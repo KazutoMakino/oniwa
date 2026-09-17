@@ -1,8 +1,8 @@
-//! 青空文庫パブリックドメイン（著作権満了）作品の自動収集 & 前処理パイプライン
+//! Automated ingestion & preprocessing pipeline for Aozora Bunko public domain works
 //!
-//! ONIWAの理念に基づき、著作権保護期間が満了した作品（パブリックドメイン）のみを
-//! 厳格にフィルタリングし、サーバー負荷を防ぐエチケット（User-Agent、ウェイト、キャッシュ）
-//! を遵守して安全に取得・クレンジング・系譜台帳記録を行います。
+//! In alignment with ONIWA's philosophy, strictly filters only works with expired copyright protection
+//! (public domain) while observing server etiquette (custom User-Agent, request pacing, local cache)
+//! to safely download, cleanse, and log complete provenance.
 
 #![allow(dead_code)]
 
@@ -18,20 +18,20 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
 
-/// レシピ設定ファイルの個別作品ターゲット
+/// Target work in recipe configuration file
 #[derive(Debug, Deserialize, Clone)]
 pub struct RecipeWorkTarget {
     pub author: String,
     pub title: String,
 }
 
-/// レシピ設定ファイル全体の構成
+/// Structure of overall recipe configuration file
 #[derive(Debug, Deserialize, Clone)]
 pub struct RecipeConfig {
     pub curated_works: Vec<RecipeWorkTarget>,
 }
 
-/// 青空文庫の作品メタデータ
+/// Metadata for an Aozora Bunko work
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AozoraWorkEntry {
@@ -41,9 +41,9 @@ pub struct AozoraWorkEntry {
     pub author_first: String,
     pub card_url: String,
     pub text_zip_url: String,
-    pub font_type: String,      // 新字新仮名, 旧字旧仮名 等
-    pub copyright_work: bool,   // true: 著作権あり, false: なし(PD)
-    pub copyright_author: bool, // true: 著作権あり, false: なし(PD)
+    pub font_type: String,      // New/old orthography, etc.
+    pub copyright_work: bool,   // true: copyrighted, false: none (PD)
+    pub copyright_author: bool, // true: copyrighted, false: none (PD)
 }
 
 #[allow(dead_code)]
@@ -89,9 +89,9 @@ impl AozoraPipeline {
         self.force_download = force;
     }
 
-    /// 取得データ・コーパス・監査台帳をまっさらにリセット（安全に初期化）
+    /// Cleanly reset ingested data, corpus, and provenance ledger (safe initialization)
     pub fn clean_all(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("  🧹 既存のデータセット・コーパス・台帳を初期化中...");
+        println!("  🧹 Initializing existing dataset, corpus, and ledger...");
         if self.corpus_dir.exists() {
             fs::remove_dir_all(&self.corpus_dir).ok();
             fs::create_dir_all(&self.corpus_dir).ok();
@@ -106,23 +106,23 @@ impl AozoraPipeline {
             fs::copy(&ledger_path, &backup_path).ok();
             fs::remove_file(&ledger_path).ok();
             println!(
-                "  📋 既存の台帳は {:?} に退避し、新規台帳を開設します",
+                "  📋 Archived existing ledger to {:?}; starting new ledger",
                 backup_path
             );
         }
-        println!("  ✅ 初期化完了！");
+        println!("  ✅ Initialization complete!");
         Ok(())
     }
 
-    /// 青空文庫zipアーカイブをダウンロード（キャッシュがあればスキップ）
+    /// Download Aozora Bunko zip archive (skips if cached)
     fn download_file(&self, url: &str, dest_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if !self.force_download && dest_path.exists() && dest_path.metadata()?.len() > 0 {
-            // キャッシュヒット
+            // Cache hit
             return Ok(());
         }
 
-        println!("  📥 ダウンロード中: {} ...", url);
-        // 青空文庫サーバーへのエチケット: User-Agentを明記
+        println!("  📥 Downloading: {} ...", url);
+        // Server etiquette: specify custom User-Agent
         let user_agent =
             "oniwa-lm/0.1.0 (Public Domain AI Training Pipeline; Ethical AI without abuse)";
         let status = Command::new("curl")
@@ -138,19 +138,19 @@ impl AozoraPipeline {
 
         if !status.success() {
             return Err(format!(
-                "ダウンロード失敗 (curl exit code: {:?}): {}",
+                "Download failed (curl exit code: {:?}): {}",
                 status.code(),
                 url
             )
             .into());
         }
 
-        // サーバー負荷軽減のためのウェイト（1秒）
+        // Pacing wait (1 second) to prevent server overload
         sleep(Duration::from_millis(1000));
         Ok(())
     }
 
-    /// zipファイルからShift_JISテキストを取り出し、UTF-8に変換
+    /// Extract Shift_JIS text from zip file and convert to UTF-8
     fn extract_and_decode_zip(
         &self,
         zip_path: &Path,
@@ -158,7 +158,7 @@ impl AozoraPipeline {
         let file = File::open(zip_path)?;
         let mut archive = zip::ZipArchive::new(file)?;
 
-        // 通常1番目のテキストファイルを対象とする
+        // Target the first text file
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)?;
             let name = file.name().to_string();
@@ -166,11 +166,11 @@ impl AozoraPipeline {
                 let mut bytes = Vec::new();
                 file.read_to_end(&mut bytes)?;
 
-                // Shift_JIS -> UTF-8 デコード
+                // Shift_JIS -> UTF-8 decoding
                 let (cow, _, had_errors) = encoding_rs::SHIFT_JIS.decode(&bytes);
                 if had_errors {
                     eprintln!(
-                        "  ⚠️ Shift_JISデコード中に一部文字の置換が発生しました: {}",
+                        "  ⚠️ Character replacement occurred during Shift_JIS decoding: {}",
                         name
                     );
                 }
@@ -178,14 +178,10 @@ impl AozoraPipeline {
             }
         }
 
-        Err(format!(
-            "zipファイル内に .txt が見つかりませんでした: {:?}",
-            zip_path
-        )
-        .into())
+        Err(format!("No .txt file found inside zip archive: {:?}", zip_path).into())
     }
 
-    /// 単一の作品を取得・クレンジングして corpus_dir に保存し、台帳に記録
+    /// Ingest, cleanse, save a single work to corpus_dir, and record in ledger
     pub fn ingest_single_work(
         &self,
         author: &str,
@@ -198,14 +194,14 @@ impl AozoraPipeline {
         let zip_dest = self.raw_dir.join(format!("{}.zip", file_stem));
         let clean_dest = self.corpus_dir.join(format!("{}.txt", file_stem));
 
-        // 1. ダウンロード
+        // 1. Download
         self.download_file(zip_url, &zip_dest)?;
 
-        // 2. 解凍 & Shift_JISデコード
+        // 2. Decompress & Shift_JIS decode
         let raw_text = self.extract_and_decode_zip(&zip_dest)?;
         let raw_sha256 = compute_checksum_bytes(raw_text.as_bytes());
 
-        // 3. クレンジング（ルビ・注記・ヘッダー・フッター除去）
+        // 3. Cleanse (remove ruby, notes, header, footer)
         let cleaned = clean_aozora_text(&raw_text);
         fs::write(&clean_dest, &cleaned)?;
 
@@ -213,46 +209,46 @@ impl AozoraPipeline {
         let cleaned_sha256 = compute_checksum_bytes(cleaned_bytes);
         let char_count = cleaned.chars().count();
 
-        // 4. データ系譜台帳 (ledger_index.jsonl) への記録
+        // 4. Record in provenance ledger (ledger_index.jsonl)
         let ledger_path = self.logs_dir.join("ledger_index.jsonl");
         let mut ledger = ProvenanceLedger::open(&ledger_path)?;
         ledger.record(&ProvenanceEvent::DataIngestion(DataIngestionLog {
             timestamp_utc: oniwa_lm::logger::current_timestamp_utc(),
-            source_name: format!("青空文庫: {}『{}』", author, title),
+            source_name: format!("Aozora Bunko: {} \"{}\"", author, title),
             source_url_or_path: card_url.to_string(),
             license: license.to_string(),
             raw_data_sha256: raw_sha256,
             raw_data_bytes: raw_text.len(),
             tokenized_sha256: cleaned_sha256,
             num_tokens: char_count,
-            vocab_size: 0, // 全体統合時に更新
+            vocab_size: 0, // Updated upon corpus consolidation
             tokenizer_type: "Aozora Cleaner -> Character-level UTF-8".into(),
         }))?;
 
         println!(
-            "  ✅ 取得 & クレンジング完了: 『{}』({} 文字)",
+            "  ✅ Ingestion & cleansing complete: \"{}\" ({} characters)",
             title, char_count
         );
         Ok(clean_dest)
     }
 
-    /// レシピ設定ファイル（JSON）に基づいて作品群を一括収集
+    /// Batch ingest works based on recipe configuration file (JSON)
     pub fn ingest_from_recipe<P: AsRef<Path>>(
         &self,
         recipe_path: P,
     ) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
         let recipe_p = recipe_path.as_ref();
         if !recipe_p.exists() {
-            return Err(format!("レシピファイル {:?} が見つかりません。", recipe_p).into());
+            return Err(format!("Recipe file {:?} not found.", recipe_p).into());
         }
 
         let recipe_str = fs::read_to_string(recipe_p)?;
         let recipe: RecipeConfig = serde_json::from_str(&recipe_str)?;
 
         println!("============================================================");
-        println!(" 📚 青空文庫パブリックドメイン・レシピ駆動データ収集");
+        println!(" 📚 Aozora Bunko Public Domain Recipe-Driven Ingestion");
         println!(
-            "    (設定ファイル: {:?} / 全 {} 作品)",
+            "    (Config file: {:?} / {} works total)",
             recipe_p,
             recipe.curated_works.len()
         );
@@ -260,19 +256,19 @@ impl AozoraPipeline {
 
         let mut paths = Vec::new();
         for target in &recipe.curated_works {
-            println!("▶ 『{}』（著: {}）", target.title, target.author);
+            println!("▶ \"{}\" (Author: {})", target.title, target.author);
             if let Some(entry) = self.find_work_in_index(&target.author, &target.title)? {
                 let path = self.ingest_single_work(
                     &entry.author_full(),
                     &entry.title,
                     &entry.text_zip_url,
                     &entry.card_url,
-                    "Public Domain (青空文庫 著作権満了)",
+                    "Public Domain (Aozora Bunko Expired Copyright)",
                 )?;
                 paths.push(path);
             } else {
                 eprintln!(
-                    "  ⚠️ 『{}』（{}）が公式インデックスで見つかりませんでした",
+                    "  ⚠️ \"{}\" ({}) not found in official index",
                     target.title, target.author
                 );
             }
@@ -281,7 +277,7 @@ impl AozoraPipeline {
         Ok(paths)
     }
 
-    /// プリセット作品群（デフォルトレシピから自動収集）
+    /// Preset works (auto-ingested fallback recipe)
     pub fn ingest_presets(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
         let default_recipe = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("config")
@@ -301,28 +297,28 @@ impl AozoraPipeline {
             ];
 
             println!("============================================================");
-            println!(" 📚 青空文庫パブリックドメイン・プリセット作品の自動収集 (フォールバック)");
+            println!(" 📚 Aozora Bunko Public Domain Preset Ingestion (Fallback)");
             println!(
-                "    (対象: 著作権保護期間満了作品のみ / 全 {} 作品)",
+                "    (Target: expired copyright works only / {} works total)",
                 preset_targets.len()
             );
             println!("============================================================");
 
             let mut paths = Vec::new();
             for (author, title) in preset_targets {
-                println!("▶ 『{}』（著: {}）", title, author);
+                println!("▶ \"{}\" (Author: {})", title, author);
                 if let Some(entry) = self.find_work_in_index(author, title)? {
                     let path = self.ingest_single_work(
                         &entry.author_full(),
                         &entry.title,
                         &entry.text_zip_url,
                         &entry.card_url,
-                        "Public Domain (青空文庫 著作権満了)",
+                        "Public Domain (Aozora Bunko Expired Copyright)",
                     )?;
                     paths.push(path);
                 } else {
                     eprintln!(
-                        "  ⚠️ 『{}』（{}）が公式インデックスで見つかりませんでした",
+                        "  ⚠️ \"{}\" ({}) not found in official index",
                         title, author
                     );
                 }
@@ -332,7 +328,7 @@ impl AozoraPipeline {
         }
     }
 
-    /// 公式インデックスCSVから作品を検索
+    /// Search for a work in official index CSV
     pub fn find_work_in_index(
         &self,
         target_author: &str,
@@ -396,7 +392,7 @@ impl AozoraPipeline {
         Ok(None)
     }
 
-    /// 青空文庫公式拡張インデックスCSVをダウンロードして、著作権満了作品を検索・一括収集
+    /// Download Aozora Bunko official index CSV, search and batch ingest expired works
     pub fn search_and_ingest_by_author(
         &self,
         target_author: &str,
@@ -407,7 +403,7 @@ impl AozoraPipeline {
 
         println!("============================================================");
         println!(
-            " 🔍 青空文庫公式インデックス検索: 著者「{}」 (最大 {} 作品)",
+            " 🔍 Searching Aozora Bunko official index for author \"{}\" (max {} works)",
             target_author, max_works
         );
         println!("============================================================");
@@ -424,7 +420,7 @@ impl AozoraPipeline {
         for line_res in reader.lines() {
             let line = line_res?;
             if line.starts_with("作品ID") || line.starts_with('\u{feff}') {
-                continue; // ヘッダー
+                continue; // Header
             }
 
             let fields: Vec<String> = parse_csv_line(&line);
@@ -443,7 +439,7 @@ impl AozoraPipeline {
 
             let full_author = format!("{}{}", author_last, author_first);
 
-            // コンプライアンスチェック: 著作権フラグが「なし」かつ著者名一致
+            // Compliance check: copyright flag is none and author matches
             if full_author.contains(target_author)
                 && copyright_work == "なし"
                 && copyright_author == "なし"
@@ -452,7 +448,7 @@ impl AozoraPipeline {
                 && zip_url.ends_with(".zip")
             {
                 println!(
-                    "▶ 検出: 『{}』（著: {}）- 著作権: 満了 [PD]",
+                    "▶ Found: \"{}\" (Author: {}) - Copyright: Expired [PD]",
                     title, full_author
                 );
                 match self.ingest_single_work(
@@ -460,7 +456,7 @@ impl AozoraPipeline {
                     title,
                     zip_url,
                     card_url,
-                    "Public Domain (青空文庫 著作権満了)",
+                    "Public Domain (Aozora Bunko Expired Copyright)",
                 ) {
                     Ok(p) => {
                         collected.push(p);
@@ -469,7 +465,7 @@ impl AozoraPipeline {
                         }
                     }
                     Err(e) => {
-                        eprintln!("  ⚠️ 『{}』の取得エラー: {}", title, e);
+                        eprintln!("  ⚠️ Error ingesting \"{}\": {}", title, e);
                     }
                 }
             }
@@ -478,10 +474,10 @@ impl AozoraPipeline {
         Ok(collected)
     }
 
-    /// corpus_dir 内の全テキストを統合し、語彙テーブル (vocab.json) とトークン列 (tokens.bin) を再生成
+    /// Consolidate all texts in corpus_dir and regenerate vocab.json and tokens.bin
     pub fn build_combined_corpus(&self) -> Result<(usize, usize), Box<dyn std::error::Error>> {
         println!("\n============================================================");
-        println!(" 📦 全作品テキストの統合 & 語彙・トークンバイナリ生成");
+        println!(" 📦 Consolidating all texts & generating vocabulary and token binary");
         println!("============================================================");
 
         let mut combined_text = String::new();
@@ -507,34 +503,37 @@ impl AozoraPipeline {
         fs::write(&combined_file, &combined_text)?;
 
         let total_chars = combined_text.chars().count();
-        println!("  - 統合作品数: {} 作品", work_count);
+        println!("  - Total consolidated works: {}", work_count);
         println!(
-            "  - 統合文字数: {} 文字 ({:.2} KB)",
+            "  - Total characters: {} ({:.2} KB)",
             total_chars,
             combined_text.len() as f32 / 1024.0
         );
 
-        // トークナイズと語彙生成
+        // Tokenization and vocab generation
         let tokenizer = CharTokenizer::ingest_file(
             &combined_file,
             &self.data_dir,
             &self.logs_dir,
             &format!(
-                "青空文庫パブリックドメイン統合コーパス ({}作品)",
+                "Aozora Bunko Public Domain Consolidated Corpus ({} works)",
                 work_count
             ),
             "https://www.aozora.gr.jp/",
-            "Public Domain (著作権満了)",
+            "Public Domain (Expired Copyright)",
         )?;
 
-        println!("  - 統合語彙サイズ: {} 文字", tokenizer.vocab_size());
-        println!("  - tokens.bin & vocab.json 更新完了！");
+        println!(
+            "  - Consolidated vocab size: {} characters",
+            tokenizer.vocab_size()
+        );
+        println!("  - tokens.bin & vocab.json successfully updated!");
 
         Ok((work_count, total_chars))
     }
 }
 
-/// CSV1行の簡易クオート対応パーサー
+/// Simple quote-aware CSV line parser
 fn parse_csv_line(line: &str) -> Vec<String> {
     let mut fields = Vec::new();
     let mut field = String::new();

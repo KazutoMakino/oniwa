@@ -1,10 +1,10 @@
-//! 自己教師ありデータセット合成・バッチ生成器
+//! Self-Supervised Dataset Synthesis & Batch Generator
 //!
-//! 既存の `data/corpus` から多種多様なコーパス（Rust, Python, 法令・技術文書, 文学）を読み込み、
-//! 人手ラベル付けゼロで以下の決定タスク用グラウンドトゥルースを自動合成：
-//! - Choice: コーパスのカテゴリ (0: Rust, 1: Python, 2: Legal/Doc, 3: Literature)
-//! - Noul: 括弧や構文の破壊・異常フラグ (true: 異常あり, false: 正常)
-//! - Score: 構文複雑度 (1.0 〜 5.0)
+//! Ingests diverse corpora from `data/corpus` (Rust, Python, legal/tech docs, literature),
+//! and automatically synthesizes ground truth for decision tasks with zero human labeling:
+//! - Choice: Corpus category (0: Rust, 1: Python, 2: Legal/Doc, 3: Literature)
+//! - Noul: Bracket corruption / syntax anomaly flag (true: corrupted, false: normal)
+//! - Score: Syntactic complexity (1.0 to 5.0)
 
 use oniwa_lm::reproducibility::DeterministicRng;
 use oniwa_lm::tokenizer::CharTokenizer;
@@ -75,7 +75,7 @@ impl DatasetGenerator {
             }
         }
 
-        // 最低限のフォールバック
+        // Minimal fallback samples
         if rust_texts.is_empty() {
             rust_texts.push("fn main() {\n    println!(\"Hello, world!\");\n}\n".into());
         }
@@ -100,7 +100,7 @@ impl DatasetGenerator {
         })
     }
 
-    /// 単一サンプルの動的合成
+    /// Dynamically synthesize a single sample
     pub fn sample_one(&self, rng: &mut DeterministicRng, max_len: usize) -> DecisionSample {
         let cat_idx = (rng.next_f32() * 4.0) as usize % 4;
         let (category, source_list) = match cat_idx {
@@ -113,7 +113,7 @@ impl DatasetGenerator {
         let doc_idx = (rng.next_f32() * source_list.len() as f32) as usize % source_list.len();
         let doc = &source_list[doc_idx];
 
-        // テキストの切り出し
+        // Slice snippet from source
         let chars: Vec<char> = doc.chars().collect();
         let snippet = if chars.len() > max_len {
             let start = (rng.next_f32() * (chars.len() - max_len) as f32) as usize;
@@ -122,10 +122,10 @@ impl DatasetGenerator {
             doc.clone()
         };
 
-        // 構文複雑度の算定 (1.0 〜 5.0)
+        // Calculate syntactic complexity (1.0 to 5.0)
         let complexity = Self::compute_complexity(&snippet);
 
-        // 50% の確率で括弧を破壊・ノイズ混入
+        // Corrupt brackets / inject noise with 50% probability
         let inject_anomaly = rng.next_f32() < 0.5;
         let final_text = if inject_anomaly {
             Self::corrupt_syntax(&snippet, rng)
@@ -141,7 +141,7 @@ impl DatasetGenerator {
         }
     }
 
-    /// 構文複雑度スコアの計算 (1.0 〜 5.0)
+    /// Compute syntactic complexity score (1.0 to 5.0)
     fn compute_complexity(text: &str) -> f32 {
         let lines = text.lines().count();
         let mut max_indent = 0;
@@ -167,7 +167,7 @@ impl DatasetGenerator {
         score.clamp(1.0, 5.0)
     }
 
-    /// 括弧破壊・ノイズ混入
+    /// Corrupt brackets and inject syntactic noise
     fn corrupt_syntax(text: &str, rng: &mut DeterministicRng) -> String {
         let mut chars: Vec<char> = text.chars().collect();
         if chars.is_empty() {
@@ -177,7 +177,7 @@ impl DatasetGenerator {
         let mode = (rng.next_f32() * 3.0) as usize;
         match mode {
             0 => {
-                // 括弧の削除
+                // Delete matching brackets
                 for c in &mut chars {
                     if matches!(*c, '{' | '}' | '(' | ')' | '[' | ']') && rng.next_f32() < 0.4 {
                         *c = ' ';
@@ -185,7 +185,7 @@ impl DatasetGenerator {
                 }
             }
             1 => {
-                // 括弧の反転・食い違い混入
+                // Swap / mismatch brackets
                 for c in &mut chars {
                     if *c == '{' && rng.next_f32() < 0.5 {
                         *c = ')';
@@ -195,7 +195,7 @@ impl DatasetGenerator {
                 }
             }
             _ => {
-                // 未閉じのブロックを強制挿入
+                // Inject unclosed block
                 chars.extend(" { let broken = ( ; ".chars());
             }
         }
@@ -203,7 +203,7 @@ impl DatasetGenerator {
         chars.into_iter().collect()
     }
 
-    /// バッチの生成
+    /// Generate batch
     pub fn generate_batch(
         &self,
         tokenizer: &CharTokenizer,
@@ -219,7 +219,7 @@ impl DatasetGenerator {
         for _ in 0..batch_size {
             let sample = self.sample_one(rng, seq_len);
             let mut sample_toks = tokenizer.encode(&sample.text);
-            sample_toks.resize(seq_len, 0); // パディング
+            sample_toks.resize(seq_len, 0); // Padding
 
             batch_tokens.extend_from_slice(&sample_toks);
             choice_labels.push(sample.category as usize);

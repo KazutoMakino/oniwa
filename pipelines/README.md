@@ -1,39 +1,40 @@
-# ONIWA Data Pipelines (土壌づくり)
+# ONIWA Data Pipelines
 
-ONIWA プロジェクトにおける「クリーンな土壌づくり（出自が100%追跡可能なオープンデータ収集・前処理）」を担当する専用クレート（`oniwa-pipeline`）です。
-
----
-
-## 主な役割
-1. **法・コンプライアンス遵守の自動収集**:
-   - **青空文庫**: 公式拡張全作品インデックスから、**著作権保護期間満了（パブリックドメイン / CC0相当）**の作品のみを厳格にフィルタリング。著作権存続作品の混入をゼロにします。
-   - **e-Gov 基本法令**: **著作権法第13条（権利の目的とならない著作物＝パブリックドメイン）**に基づき、日本国憲法・刑法・著作権法・民法・裁判所法等の基本法規を公式APIから取得・クレンジング。
-2. **Webエチケット・過負荷防止**:
-   - 明確な User-Agent の設定、リクエスト間隔のウェイト（1秒）、ローカルキャッシュ（`data/raw/`）による再ダウンロード防止。
-3. **高精度テキストクレンジング**:
-   - ルビ記法（`｜親文字《るび》`、`漢字《るび》`）、入力者注記（`［＃...］`）、法令XMLタグの自動除去と正規化。
-4. **透明な監査台帳（Provenance Ledger）記録**:
-   - 取得した全作品・法令の名称、原典URL、法的根拠、SHA-256ハッシュ、文字数を `logs/ledger_index.jsonl` に完全記録。
-5. **マルチソース統合コーパス生成**:
-   - クレンジング済みテキスト群を一括結合し、モデル学習用の `data/tokens.bin` と `data/vocab.json` を再生成。
+Dedicated crate (`oniwa-pipeline`) responsible for clean data preparation (collecting and preprocessing 100% provenance-traceable open data) in the ONIWA project.
 
 ---
 
-## 使い方 (`oniwa-dataset`)
+## Key Roles
+
+1. **Compliance-First Automated Ingestion**:
+   - **Aozora Bunko**: Strictly filters only works whose **copyright protection period has expired (Public Domain / CC0 equivalent)** from the official index. Completely prevents contamination from copyrighted material.
+   - **e-Gov Basic Laws**: Under **Article 13 of the Japanese Copyright Act (Works not eligible for copyright protection = Public Domain)**, retrieves and cleanses core statutory texts (Constitution, Penal Code, Copyright Act, Civil Code, Court Act, etc.) via official APIs.
+2. **Web Etiquette & Load Prevention**:
+   - Explicit User-Agent headers, 1-second request interval pacing, and local caching (`data/raw/`) to prevent redundant downloads.
+3. **High-Precision Text Cleaning**:
+   - Automated removal and normalization of ruby annotations (`｜kanji《ruby》`, `漢字《ruby》`), editor notes (`［＃...］`), and statutory XML tags.
+4. **Transparent Provenance Ledger Recording**:
+   - Fully logs the title, source URL, legal basis, SHA-256 hash, and character count of every ingested work into `logs/ledger_index.jsonl`.
+5. **Multi-Source Unified Corpus Generation**:
+   - Bundles cleaned texts and regenerates `data/tokens.bin` and `data/vocab.json` for model training.
+
+---
+
+## Usage (`oniwa-dataset`)
 
 ```bash
-# ① 青空文庫プリセット名作＋e-Gov基本法令を一括取得し、統合コーパスを再生成
+# 1. Ingest preset Aozora Bunko classics + e-Gov basic laws and regenerate unified corpus
 cargo run --release -p oniwa-pipeline -- --all
 
-# ② e-Gov 基本法令オープンデータのみを一括取得
+# 2. Ingest only e-Gov basic laws open data
 cargo run --release -p oniwa-pipeline -- --laws
 
-# ③ レシピ指定による名作群の一括収集（56作品）
+# 3. Batch ingest classic literature specified in recipe file (56 works)
 cargo run --release -p oniwa-pipeline -- --recipe pipelines/config/recipes.json --build
 
-# ④ 特定の著者の著作権満了作品を片っ端から検索・追加収集
+# 4. Search and ingest copyright-expired works by a specific author
 cargo run --release -p oniwa-pipeline -- --author "夏目漱石" --limit 5 --build
 
-# ⑤ 現在の収集状況と監査台帳の確認
+# 5. Check current ingestion status and provenance ledger
 cargo run --release -p oniwa-pipeline -- --status
 ```

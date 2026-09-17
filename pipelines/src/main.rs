@@ -1,8 +1,8 @@
-//! oniwa-pipeline: データセット管理 & 青空文庫自動収集CLI
+//! oniwa-pipeline: Dataset management & ethical data ingestion CLI
 //!
 //! ONIWA: Organic Non-datacenter Intelligence Without Abuse
-//! 法・コンプライアンス（著作権満了作品のみ）を厳格に守りながら、
-//! 青空文庫の名作群を安全に取得・クレンジング・系譜台帳に記録します。
+//! Compliant with legal terms (public domain works only, open licenses, official APIs),
+//! safely retrieves, cleanses, and logs corpora into the provenance ledger.
 
 mod aozora;
 mod arxiv;
@@ -20,8 +20,10 @@ use techdocs::TechDocsPipeline;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
-    println!(" 📚 ONIWA: クリーン・オープンデータ収集パイプライン");
-    println!("    (青空文庫PD ＆ e-Gov法令 ＆ arXivオープンサイエンス ＆ 公式技術仕様 ＆ クリーンコード)");
+    println!(" 📚 ONIWA: Clean Open-Source Data Ingestion Pipeline");
+    println!(
+        "    (Aozora PD & e-Gov Laws & arXiv Open Science & Official Tech Specs & Clean Code)"
+    );
     println!("============================================================\n");
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -155,44 +157,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         code_pipeline.set_force(true);
     }
 
-    // 0. クリーン・リセット処理
+    // 0. Clean and reset processing
     if do_clean {
         aozora_pipeline.clean_all()?;
     }
 
-    // 1. 青空文庫: レシピまたはプリセット作品群の取得
+    // 1. Aozora Bunko: Fetch recipes or presets
     if let Some(ref recipe_path) = target_recipe {
         aozora_pipeline.ingest_from_recipe(recipe_path)?;
     } else if do_preset {
         aozora_pipeline.ingest_presets()?;
     }
 
-    // 2. 青空文庫: 指定著者の作品収集
+    // 2. Aozora Bunko: Search and ingest works by author
     if let Some(author) = target_author {
         aozora_pipeline.search_and_ingest_by_author(&author, limit)?;
     }
 
-    // 3. e-Gov: 基本法令オープンデータの取得
+    // 3. e-Gov: Fetch fundamental legal open data
     if do_laws {
         egov_pipeline.ingest_default_laws()?;
     }
 
-    // 4. 公式技術ドキュメント・コード仕様の取得
+    // 4. Official technical docs & code specifications
     if do_techdocs {
         techdocs_pipeline.ingest_default_techdocs()?;
     }
 
-    // 5. 基本アルゴリズム・クリーンコード（Python/Rust）の取得
+    // 5. Basic algorithms & clean code (Python/Rust)
     if do_code {
         code_pipeline.ingest_default_code()?;
     }
 
-    // 6. arXiv: オープンサイエンス論文アブストラクトの取得
+    // 6. arXiv: Open-access scientific paper abstracts
     if do_arxiv {
         arxiv_pipeline.ingest_category(&arxiv_cat, arxiv_limit)?;
     }
 
-    // 7. 統合コーパスの再生成 (全ソースの corpus/*.txt を一括結合)
+    // 7. Rebuild unified corpus (aggregate all corpus/*.txt files)
     if do_build
         || do_preset
         || do_laws
@@ -205,7 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         aozora_pipeline.build_combined_corpus()?;
     }
 
-    // 8. ステータス表示
+    // 8. Display status
     if do_status
         || (!do_preset
             && !do_laws
@@ -219,8 +221,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         show_status(&data_dir, &logs_dir)?;
     }
 
-    println!("\n✨ すべての処理が完了しました。");
-    println!("学習を実行するには以下のコマンドを実行してください:");
+    println!("\n✨ Ingestion pipeline execution completed successfully.");
+    println!("To start training on the ingested corpus, run:");
     println!("  $ cargo run --release -p oniwa-lm --bin train -- --steps 500 --reset --prompt \"メロスは、\"");
     println!("============================================================");
 
@@ -228,34 +230,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn print_help() {
-    println!("【使い方】");
-    println!("  cargo run --release -p oniwa-pipeline -- [オプション]\n");
-    println!("【オプション】");
-    println!("  --all               全ソース（青空文庫＋法令＋技術＋コード＋arXiv）を一括取得し、統合コーパスを再生成");
-    println!("  --preset            青空文庫の代表的な名作群（recipes.json 設定作品群）を一括取得");
+    println!("Usage:");
+    println!("  cargo run --release -p oniwa-pipeline -- [options]\n");
+    println!("Options:");
+    println!("  --all               Ingest all sources (Aozora Bunko + Laws + Tech Docs + Code + arXiv) and rebuild the combined corpus");
+    println!("  --preset            Ingest predefined classic works from Aozora Bunko (configured in recipes.json)");
     println!(
-        "  --laws              e-Gov APIから日本国憲法・刑法・著作権法・民法等の基本法令を一括取得"
+        "  --laws              Ingest fundamental Japanese laws (Constitution, Penal Code, Copyright Law, Civil Code) via e-Gov API"
     );
     println!(
-        "  --techdocs          公式オープンソース技術ドキュメント（Rust公式解説等）を一括取得"
+        "  --techdocs          Ingest official open-source tech docs (Rust tutorials, Serde, Regex, etc.)"
     );
-    println!("  --code              オープンソース基本アルゴリズムコード（Python/Rust、階乗/フィボナッチ/探索/ソート等）を一括取得");
-    println!("  --arxiv [件数]      arXiv APIから人工知能・自然言語処理等のオープンアクセス論文要約を取得 (デフォルト: 10)");
+    println!("  --code              Ingest open-source algorithm implementations (Python/Rust: factorial, fibonacci, sort, search, etc.)");
     println!(
-        "  --arxiv-cat <分野>  arXiv検索カテゴリ指定 (例: cs.AI, cs.CL, cs.LG / デフォルト: cs.AI)"
+        "  --arxiv [count]     Ingest open-access paper abstracts from arXiv API (default: 10)"
     );
-    println!("  --recipe <パス>     JSONレシピファイルに基づいて指定作品群を一括取得（例: pipelines/config/recipes.json）");
     println!(
-        "  --author <名前>     指定した著者の著作権満了作品を青空文庫全作品リストから検索して取得"
+        "  --arxiv-cat <cat>   Specify arXiv category (e.g. cs.AI, cs.CL, cs.LG / default: cs.AI)"
     );
-    println!("  --limit <数>        著者検索時の取得上限作品数 (デフォルト: 5)");
-    println!("  --build             収集済みテキスト群を統合して tokens.bin & vocab.json を生成");
-    println!("  --force             キャッシュを無視して強制的に再ダウンロード & 再解析");
-    println!("  --clean             収集データ・コーパス・台帳を初期化（既存台帳はバックアップ）");
+    println!("  --recipe <path>     Ingest works specified in a JSON recipe file (e.g. pipelines/config/recipes.json)");
     println!(
-        "  --status            現在収集されている作品・法令・論文一覧と系譜台帳の状況を表示\n"
+        "  --author <name>     Search and ingest public domain works by author from Aozora Bunko catalog"
     );
-    println!("【使用例】");
+    println!(
+        "  --limit <count>     Maximum number of works to fetch per author search (default: 5)"
+    );
+    println!("  --build             Merge all ingested texts into combined corpus and rebuild tokens.bin & vocab.json");
+    println!("  --force             Bypass cache and force re-download & re-parse");
+    println!("  --clean             Reset ingested raw data, corpus, and ledger (backs up existing ledger)");
+    println!(
+        "  --status            Display status of current corpus files and provenance ledger records\n"
+    );
+    println!("Examples:");
     println!("  $ cargo run --release -p oniwa-pipeline -- --all");
     println!("  $ cargo run --release -p oniwa-pipeline -- --techdocs");
     println!("  $ cargo run --release -p oniwa-pipeline -- --arxiv 10");
@@ -268,7 +274,7 @@ fn show_status(data_dir: &Path, logs_dir: &Path) -> Result<(), Box<dyn std::erro
     let ledger_path = logs_dir.join("ledger_index.jsonl");
 
     println!("============================================================");
-    println!(" 📊 現在のデータセット保管状況 (data/corpus/)");
+    println!(" 📊 Dataset Storage Status (data/corpus/)");
     println!("============================================================");
 
     if corpus_dir.exists() {
@@ -285,7 +291,7 @@ fn show_status(data_dir: &Path, logs_dir: &Path) -> Result<(), Box<dyn std::erro
             let chars = content.chars().count();
             total_chars += chars;
             println!(
-                "  [{:2}] {:<35} ({:6} 文字, {:.1} KB)",
+                "  [{:2}] {:<35} ({:6} chars, {:.1} KB)",
                 idx + 1,
                 path.file_name().unwrap_or_default().to_string_lossy(),
                 chars,
@@ -293,16 +299,16 @@ fn show_status(data_dir: &Path, logs_dir: &Path) -> Result<(), Box<dyn std::erro
             );
         }
         println!("------------------------------------------------------------");
-        println!("  - 合計作品数: {} 作品", entries.len());
-        println!("  - 合計文字数: {} 文字", total_chars);
+        println!("  - Total items: {} items", entries.len());
+        println!("  - Total characters: {} chars", total_chars);
     } else {
-        println!("  （まだ収集された作品はありません。--preset で取得できます）");
+        println!("  (No works ingested yet. Ingest with --preset or --all)");
     }
 
-    println!("\n 📜 監査台帳 (logs/ledger_index.jsonl):");
+    println!("\n 📜 Provenance Ledger (logs/ledger_index.jsonl):");
     if ledger_path.exists() {
         let count = std::fs::read_to_string(&ledger_path)?.lines().count();
-        println!("  - 記録された監査・系譜イベント数: {} 件", count);
+        println!("  - Recorded provenance events: {} events", count);
     }
 
     Ok(())

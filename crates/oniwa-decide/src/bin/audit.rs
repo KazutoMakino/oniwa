@@ -1,9 +1,9 @@
-//! oniwa-decide 型安全監査・推論バイナリ
+//! oniwa-decide TypeSafe Audit & Inference Binary
 //!
-//! 自然言語やコードを受け取り、数ミリ秒で以下を判定・出力：
-//! - Choice: 言語/文書種別 (Rust, Python, 法令/技術文書, 文学)
-//! - Noul: 構文破壊・異常フラグ (True / False)
-//! - Score: 構文複雑度 (1.0 〜 5.0)
+//! Evaluates natural language or code in sub-milliseconds and outputs:
+//! - Choice: Language / Document Category (Rust, Python, Legal/Tech Doc, Literature)
+//! - Noul: Syntactic Anomaly / Corruption Flag (True / False)
+//! - Score: Syntactic Complexity (1.0 to 5.0)
 
 use oniwa_decide::{DecisionConfig, DecisionEngine, DecisionModel};
 use oniwa_lm::reproducibility::DeterministicRng;
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("============================================================");
     println!(" 🧭 oniwa-decide: TypeSafe System One Decision Engine");
-    println!("    (脱データセンター・型安全意思決定センサ)");
+    println!("    (Non-datacenter, Type-safe Decision Sensor)");
     println!("============================================================\n");
 
     let workspace_root = oniwa_lm::find_workspace_root();
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let checkpoint_dir = base_dir.join("checkpoints").join("best");
 
-    // トークナイザの読み込み
+    // Load tokenizer
     let vocab_path = data_dir.join("vocab.json");
     let tokenizer = if vocab_path.exists() {
         CharTokenizer::load_vocab(&vocab_path)?
@@ -44,10 +44,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let engine = if checkpoint_dir.join("meta.json").exists() {
-        println!("  💾 チェックポイントをロード: {:?}", checkpoint_dir);
+        println!("  💾 Loaded checkpoint: {:?}", checkpoint_dir);
         DecisionEngine::load_from_dir(&checkpoint_dir, tokenizer)?
     } else {
-        println!("  ⚠️ チェックポイント未検出: 初期化モデルで実行します（未学習）");
+        println!(
+            "  ⚠️ No checkpoint detected: running with randomly initialized model (untrained)"
+        );
         let config = DecisionConfig {
             vocab_size: tokenizer.vocab_size(),
             seq_len: 128,
@@ -64,21 +66,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         DecisionEngine::new(model, tokenizer)
     };
 
-    println!("\n🔍 入力テキスト:\n------------------------------------------------------------\n{}\n------------------------------------------------------------", text);
+    println!("\n🔍 Input Text:\n------------------------------------------------------------\n{}\n------------------------------------------------------------", text);
 
     let decision = engine.audit_text(&text);
 
     println!(
-        "\n⚡ 意思決定結果 (推論時間: {} ms):",
+        "\n⚡ Decision Output (Inference Latency: {} ms):",
         decision.inference_time_ms
     );
     println!("------------------------------------------------------------");
     println!(
-        "  1. 🏷️ Choice [文書種別]: {:?} (確信度: {:.1}%)",
+        "  1. 🏷️ Choice [Document Category]: {:?} (Confidence: {:.1}%)",
         decision.category.value,
         decision.category.confidence * 100.0
     );
-    println!("     確率分布:");
+    println!("     Probability Distribution:");
     println!(
         "       - Rust Code:       {:.1}%",
         decision.category.probabilities[0] * 100.0
@@ -97,18 +99,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     println!(
-        "\n  2. ⚠️ Noul   [構文異常]: {} (異常確率: {:.1}%, 確信度: {:.1}%)",
+        "\n  2. ⚠️ Noul   [Syntax Anomaly]: {} (Anomaly Prob: {:.1}%, Confidence: {:.1}%)",
         if decision.syntax_anomaly.value {
-            "異常あり (True)"
+            "Anomaly Detected (True)"
         } else {
-            "正常 (False)"
+            "Normal Syntax (False)"
         },
         decision.syntax_anomaly.probability * 100.0,
         decision.syntax_anomaly.confidence * 100.0
     );
 
     println!(
-        "\n  3. 📊 Score  [構文複雑度]: {:.2} / 5.0 (確信度: {:.1}%)",
+        "\n  3. 📊 Score  [Syntax Complexity]: {:.2} / 5.0 (Confidence: {:.1}%)",
         decision.complexity.value,
         decision.complexity.confidence * 100.0
     );

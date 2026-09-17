@@ -1,11 +1,11 @@
-//! oniwa-lm 超軽量モダンTransformerモデル（ONIWA）
+//! oniwa-lm ultra-lightweight modern Transformer model (ONIWA)
 //!
-//! Gemma / Llama 系アーキテクチャに準拠:
-//! - RMSNorm (各サブレイヤー前)
+//! Conforms to Gemma / Llama architecture paradigms:
+//! - RMSNorm (pre-normalization before each sub-layer)
 //! - RoPE (Rotary Position Embedding)
-//! - SwiGLU 活性化層 (Gate-Up-Down FFN)
-//! - Causal Self-Attention (因果マスク付き自己注意)
-//! - 手動バックプロパゲーション (ゼロアロケーション・フラットバッファ)
+//! - SwiGLU activation layer (Gate-Up-Down FFN)
+//! - Causal Self-Attention (autoregressive masked self-attention)
+//! - Manual backpropagation (zero-allocation flat buffers)
 
 use crate::layers::attention::CausalSelfAttention;
 use crate::layers::mlp::SwiGLU;
@@ -67,7 +67,7 @@ pub fn default_z_loss_weight() -> f32 {
 
 impl Default for ModelConfig {
     fn default() -> Self {
-        // oniwa-v2 標準設定 (~2.05M params, seq_len 128)
+        // oniwa-v2 standard configuration (~2.05M params, seq_len 128)
         Self {
             vocab_size: 4721,
             seq_len: default_seq_len(),
@@ -83,7 +83,7 @@ impl Default for ModelConfig {
 }
 
 impl ModelConfig {
-    /// meta.json から ModelConfig を復元（古いバージョンのチェックポイントに対する後方互換性フォールバック付き）
+    /// Restore ModelConfig from meta.json (with backward-compatible fallback for older checkpoints)
     pub fn from_meta_json<P: AsRef<std::path::Path>>(meta_path: P) -> std::io::Result<Self> {
         let content = std::fs::read_to_string(meta_path)?;
         let meta: serde_json::Value = serde_json::from_str(&content)
@@ -117,7 +117,7 @@ impl ModelConfig {
     }
 }
 
-/// 各レイヤーのパラメータオフセット
+/// Parameter offsets for each layer
 #[derive(Debug, Clone, Copy)]
 pub struct LayerParamOffsets {
     pub rms_att: usize,
@@ -128,7 +128,7 @@ pub struct LayerParamOffsets {
     pub down: usize,
 }
 
-/// モデル全体のパラメータレイアウト（フラット配列内オフセット）
+/// Overall parameter layout for the model (flat array offsets)
 #[derive(Debug, Clone)]
 pub struct ModelLayout {
     pub wte: usize,
@@ -186,16 +186,16 @@ impl ModelLayout {
     }
 }
 
-/// 単一のフラット配列で管理されるモデルパラメータ
+/// Model parameters managed in a single flat contiguous array
 pub struct ModelWeights {
     pub config: ModelConfig,
-    /// 全重みバッファ
+    /// Complete weight buffer
     pub params: Vec<f32>,
-    /// 全勾配バッファ
+    /// Complete gradient buffer
     pub grads: Vec<f32>,
-    /// AdamW 1次モーメンタム
+    /// AdamW first momentum
     pub m: Vec<f32>,
-    /// AdamW 2次モーメンタム
+    /// AdamW second momentum
     pub v: Vec<f32>,
 }
 
@@ -207,7 +207,7 @@ impl ModelWeights {
         let m = vec![0.0f32; num_params];
         let v = vec![0.0f32; num_params];
 
-        // 正規分布 (std = 0.02) で初期化
+        // Initialize with normal distribution (std = 0.02)
         rng.fill_gaussian(&mut params, 0.0, 0.02);
 
         Self {
@@ -251,12 +251,12 @@ impl ModelWeights {
         total
     }
 
-    /// 勾配をゼロクリア
+    /// Zero out gradients
     pub fn zero_grad(&mut self) {
         self.grads.fill(0.0);
     }
 
-    /// AdamW による1次元フラットパラメータ更新
+    /// AdamW 1D flat parameter update
     pub fn adamw_step(&mut self, lr: f32, wd: f32, beta1: f32, beta2: f32, eps: f32, step: usize) {
         let beta1_t = beta1.powi(step as i32);
         let beta2_t = beta2.powi(step as i32);
@@ -265,24 +265,24 @@ impl ModelWeights {
             let p = self.params[i];
             let g = self.grads[i];
 
-            // 重み減衰
+            // Weight decay
             let mut p_updated = p - lr * wd * p;
 
-            // モーメンタム更新
+            // Momentum update
             self.m[i] = beta1 * self.m[i] + (1.0 - beta1) * g;
             self.v[i] = beta2 * self.v[i] + (1.0 - beta2) * g * g;
 
-            // バイアス補正
+            // Bias correction
             let m_hat = self.m[i] / (1.0 - beta1_t);
             let v_hat = self.v[i] / (1.0 - beta2_t);
 
-            // パラメータ更新
+            // Parameter update
             p_updated -= lr * m_hat / (v_hat.sqrt() + eps);
             self.params[i] = p_updated;
         }
     }
 
-    /// チェックポイントをディレクトリに保存 (メタ情報JSON + 重み/オプティマイザ生バイナリ)
+    /// Save checkpoint to directory (meta JSON + weights/optimizer raw binary)
     pub fn save_checkpoint<P: AsRef<std::path::Path>>(
         &self,
         dir: P,
@@ -293,7 +293,7 @@ impl ModelWeights {
         let dir_p = dir.as_ref();
         std::fs::create_dir_all(dir_p)?;
 
-        // 1. メタ情報 JSON
+        // 1. Meta JSON
         let meta = serde_json::json!({
             "step": step,
             "loss": loss,
@@ -316,7 +316,7 @@ impl ModelWeights {
             serde_json::to_string_pretty(&meta)?,
         )?;
 
-        // 2. 生バイナリ (params, m, v を1つのファイルに連続書き出し)
+        // 2. Raw binary (serialize params, m, v sequentially into a single file)
         let mut f = std::io::BufWriter::new(std::fs::File::create(dir_p.join("weights.bin"))?);
         use std::io::Write;
         for &val in &self.params {
@@ -333,14 +333,14 @@ impl ModelWeights {
         Ok(())
     }
 
-    /// チェックポイントから重みとオプティマイザ状態を復元
+    /// Restore weights and optimizer state from checkpoint
     pub fn load_checkpoint<P: AsRef<std::path::Path>>(
         &mut self,
         dir: P,
     ) -> std::io::Result<(usize, f32, u64)> {
         let dir_p = dir.as_ref();
 
-        // 1. メタ情報読み込み
+        // 1. Load meta information
         let meta_str = std::fs::read_to_string(dir_p.join("meta.json"))?;
         let meta: serde_json::Value = serde_json::from_str(&meta_str)?;
         let step = meta["step"].as_u64().unwrap_or(0) as usize;
@@ -353,7 +353,7 @@ impl ModelWeights {
             self.config.z_loss_weight = zw as f32;
         }
 
-        // 2. 生バイナリ読み込み
+        // 2. Load raw binary
         let mut f = std::io::BufReader::new(std::fs::File::open(dir_p.join("weights.bin"))?);
         use std::io::Read;
 
@@ -376,7 +376,7 @@ impl ModelWeights {
         Ok((step, loss, seed))
     }
 
-    /// フルTransformerの順伝播・逆伝播・勾配蓄積・損失計算
+    /// Full Transformer forward, backward, gradient accumulation, and loss calculation
     pub fn forward_backward(&mut self, x: &[u16], y: &[u16], b: usize, t: usize) -> (f32, f32) {
         let n = b * t;
         let c = self.config.dim;
@@ -387,7 +387,7 @@ impl ModelWeights {
 
         let layout = ModelLayout::new(&self.config);
 
-        // --- 1. 順伝播 (Forward) ---
+        // --- 1. Forward Pass ---
 
         // (1) Token Embedding lookup: x0 [N, C]
         let mut x_curr = vec![0.0f32; n * c];
@@ -398,7 +398,7 @@ impl ModelWeights {
             x_curr[i * c..(i + 1) * c].copy_from_slice(&wte[offset..offset + c]);
         }
 
-        // 各レイヤーの中間テンソルを保持するキャッシュ
+        // Intermediate tensor cache for each layer
         #[allow(dead_code)]
         struct LayerActivations {
             x_in: Vec<f32>,     // [N, C]
@@ -458,7 +458,7 @@ impl ModelWeights {
                 nh,
             );
 
-            // 3. 残差加算: x_mid = x_in + post_att
+            // 3. Residual connection: x_mid = x_in + post_att
             let mut x_mid = vec![0.0f32; n * c];
             for i in 0..n * c {
                 x_mid[i] = x_in[i] + post_att[i];
@@ -492,7 +492,7 @@ impl ModelWeights {
                 ffn,
             );
 
-            // 6. 残差加算: x_out = x_mid + post_mlp
+            // 6. Residual connection: x_out = x_mid + post_mlp
             let mut x_out = vec![0.0f32; n * c];
             for i in 0..n * c {
                 x_out[i] = x_mid[i] + post_mlp[i];
@@ -610,7 +610,7 @@ impl ModelWeights {
             }
         }
 
-        // --- 2. 逆伝播 (Backward) ---
+        // --- 2. Backward Pass ---
 
         // (1) LM Head Backward:
         // dlm_head += final_norm^T * dlogits
@@ -646,7 +646,7 @@ impl ModelWeights {
             c,
         );
 
-        // (3) レイヤーの逆伝播 (L-1 down to 0)
+        // (3) Layer backward pass (L-1 down to 0)
         for li in (0..l).rev() {
             let lo = &layout.layers[li];
             let acts = &layer_acts[li];
@@ -679,7 +679,7 @@ impl ModelWeights {
                 ffn,
             );
 
-            // RMSNorm 2 Backward -> dx_mid に加算
+            // RMSNorm 2 Backward -> accumulate into dx_mid
             let d_rms_ffn = &mut self.grads[lo.rms_ffn..lo.rms_ffn + c];
             let rms_ffn_w = &self.params[lo.rms_ffn..lo.rms_ffn + c];
             RMSNorm::backward(
@@ -723,7 +723,7 @@ impl ModelWeights {
                 nh,
             );
 
-            // RMSNorm 1 Backward -> dx_in に加算
+            // RMSNorm 1 Backward -> accumulate into dx_in
             let d_rms_att = &mut self.grads[lo.rms_att..lo.rms_att + c];
             let rms_att_w = &self.params[lo.rms_att..lo.rms_att + c];
             RMSNorm::backward(
@@ -750,7 +750,7 @@ impl ModelWeights {
             }
         }
 
-        // 勾配ノルム計算
+        // Compute gradient norm
         let mut grad_norm_sq = 0.0f32;
         for &g in self.grads.iter() {
             grad_norm_sq += g * g;
@@ -759,12 +759,12 @@ impl ModelWeights {
         (total_loss / (n as f32), grad_norm_sq.sqrt())
     }
 
-    /// 評価用: 順伝播のみでクロスエントロピー損失を計算 (逆伝播なし・勾配更新なし)
+    /// Evaluation: compute cross-entropy loss with forward pass only (no backward, no gradient updates)
     pub fn evaluate_loss(&self, x: &[u16], y: &[u16], b: usize, t: usize) -> f32 {
         self.evaluate_loss_and_top_k(x, y, b, t, 1).0
     }
 
-    /// 評価用: 順伝播のみでクロスエントロピー損失と Top-k 精度 (%) を同時に計算
+    /// Evaluation: compute cross-entropy loss and Top-k accuracy (%) simultaneously via forward pass only
     pub fn evaluate_loss_and_top_k(
         &self,
         x: &[u16],
@@ -791,7 +791,7 @@ impl ModelWeights {
             x_curr[i * c..(i + 1) * c].copy_from_slice(&wte[offset..offset + c]);
         }
 
-        // バッファを再利用してメモリ割り当てを最小化
+        // Reuse buffers to minimize memory allocations
         let mut norm1 = vec![0.0f32; n * c];
         let mut rstd1 = vec![0.0f32; n];
         let mut q = vec![0.0f32; n * c];
@@ -833,7 +833,7 @@ impl ModelWeights {
                 nh,
             );
 
-            // 3. 残差加算: x_mid = x_curr + post_att
+            // 3. Residual connection: x_mid = x_curr + post_att
             for i in 0..n * c {
                 x_curr[i] += post_att[i];
             }
@@ -858,7 +858,7 @@ impl ModelWeights {
                 ffn,
             );
 
-            // 6. 残差加算: x_curr += post_mlp
+            // 6. Residual connection: x_curr += post_mlp
             for i in 0..n * c {
                 x_curr[i] += post_mlp[i];
             }
@@ -929,7 +929,7 @@ impl ModelWeights {
         (avg_loss, top_k_acc)
     }
 
-    /// 推論用順伝播: 与えられたトークン列（最大seq_len）から次のトークンのLogitsを計算
+    /// Inference forward pass: compute logits of next token from given token sequence (up to seq_len)
     pub fn forward_inference(&self, tokens: &[u16]) -> Vec<f32> {
         let t = tokens.len();
         let b = 1;
@@ -987,7 +987,7 @@ impl ModelWeights {
                 nh,
             );
 
-            // 3. 残差加算: x_mid = x_in + post_att
+            // 3. Residual connection: x_mid = x_in + post_att
             let mut x_mid = vec![0.0f32; t * c];
             for i in 0..t * c {
                 x_mid[i] = x_in[i] + post_att[i];
@@ -1021,7 +1021,7 @@ impl ModelWeights {
                 ffn,
             );
 
-            // 6. 残差加算
+            // 6. Residual connection
             for i in 0..t * c {
                 x_curr[i] = x_mid[i] + post_mlp[i];
             }
@@ -1040,7 +1040,7 @@ impl ModelWeights {
             c,
         );
 
-        // 最後のトークン (t - 1) に対する Logits
+        // Logits for the final token (t - 1)
         let last_norm_row = &final_norm[(t - 1) * c..t * c];
         let lm_head_w = &self.params[layout.lm_head..layout.lm_head + c * v];
         let mut logits = vec![0.0f32; v];
@@ -1081,10 +1081,10 @@ mod tests {
         let x = vec![1, 2, 3, 4, 5, 6, 7, 8];
         let y = vec![2, 3, 4, 5, 6, 7, 8, 9];
 
-        // evaluate_loss による損失
+        // Loss from evaluate_loss
         let eval_loss = model.evaluate_loss(&x, &y, b, t);
 
-        // forward_backward による損失
+        // Loss from forward_backward
         let (fb_loss, _) = model.forward_backward(&x, &y, b, t);
 
         assert!(
@@ -1124,7 +1124,7 @@ mod tests {
         assert!(!grad_norm.is_nan());
         assert!(grad_norm > 0.0);
 
-        // 数値勾配チェック (LM Head の一部パラメータで解析的勾配と数値微分を比較)
+        // Numerical gradient check (compare analytic gradient with finite difference on LM head parameter)
         let param_idx = model.params.len() - 5;
         let orig_val = model.params[param_idx];
         let h = 1e-3f32;

@@ -1,32 +1,32 @@
-# Project Oniwa (庭) 構想書
-— 家庭菜園としての知能、クリーンな土壌と自己変容するアーキテクチャ —
+# Project Oniwa (庭) Manifesto
+— Intelligence as a Kitchen Garden: Clean Soil and Self-Transforming Architectures —
 
 ---
 
-## 1. 宣言（マニフェスト）
+## 1. Manifesto
 
-### 1.1 背景：現在のAI業界の混沌とアンチテーゼ
-現代の生成AI業界は、巨大テックによる「GPU数万枚・パラメータ数千億」のパワーゲームと、Web全体の無断スクレイピングによる著作権侵害、他社モデルの出力を無断転用した蒸留データによる「モデル崩壊（近親交配）」の泥沼にあります。お互いに盗んだ・盗んでないを言い争う不毛なイタチごっこが続いています。
+### 1.1 Background: The Current AI Industry's Chaos and Antithesis
+The contemporary generative AI industry is trapped in a power game dominated by Big Tech, deploying tens of thousands of GPUs and hundreds of billions of parameters. This environment is mired in rampant web scraping, copyright infringement, and "model collapse" (inbreeding) fueled by unauthorized distillation of competitor model outputs. An unproductive game of cat-and-mouse ensues over who stole from whom.
 
-### 1.2 思想：「家庭菜園」としてのAI
-私たちが目指すのは、商業メガプラントの大量生産野菜ではなく、**「家庭菜園」**です。
-* **生産者の顔がわかる**: どの本、どの論文、どの公的データから学んだのかが100%追跡できる（完全なトレーサビリティ）。
-* **無農薬・有機栽培**: 他社AIの吐き出した合成データや無断スクレイピングのゴミを一切排除し、人間が誠実に紡いだ言葉（パブリックドメイン・オープンデータ）のみを土壌とする。
-* **愛着と手入れ**: 多少の不完全さや粗があっても、自分の手で鍬を入れ、水をやり、枝を剪定しながら育てていく。最悪、収穫した作物は自分で食べるか眺めるだけでもいい。知的好奇心と純粋な探求のための知能。
+### 1.2 Core Philosophy: AI as a "Kitchen Garden"
+What we strive for is not mass-produced vegetables from commercial mega-plants, but a **"Kitchen Garden"** (家庭菜園):
+* **Know the Producer**: 100% traceability for every book, paper, and public data source learned from (complete provenance).
+* **Organic & Pesticide-Free**: Complete rejection of synthetic data vomited by other corporate models and scrapers' junk. The soil consists purely of words honestly crafted by humans (public domain and open data).
+* **Affection and Craftsmanship**: Even with imperfections or roughness, we cultivate it with our own hands—tilling the soil, watering, and pruning branches. Even if the harvest is only enjoyed by oneself or quietly observed, it exists for intellectual curiosity and pure inquiry.
 
-### 1.3 核心の哲学：認知と言語、そしてプログラム
-* **言葉は認知の「影」である**:
-  言葉が認知を作るのではなく、認知の一種のアウトプットが言葉である。
-* **世界を作るプログラムもまた言葉である**:
-  自然言語（おしゃべり）にとどまらず、因果律を実行するコード（DNA）として言語を捉え直す。
-* **固定された箱から、自己変容する生命へ**:
-  層数やノード数が固定された行列演算ではなく、環境からの刺激によって自らのアーキテクチャ（構造そのもの）を枝分かれさせ、育っていく知能を模索する。
+### 1.3 Foundational Philosophy: Cognition, Language, and Code
+* **Language is the "Shadow" of Cognition**:
+  Language does not construct cognition; rather, language is one output of cognitive processes.
+* **Programs that Build the World are Also Language**:
+  Looking beyond natural language chatting, we reframe language as code (DNA) that executes causality.
+* **From Fixed Boxes to Self-Transforming Life**:
+  Instead of matrix multiplications in fixed layers and node counts, we seek intelligence that branches and grows its own architecture in response to environmental stimuli.
 
 ---
 
-## 2. プロジェクト構成：2つの車輪
+## 2. Project Architecture: The Two Wheels
 
-本プロジェクトは、互いを補完し合う2つのアプローチを並行して推進します。
+This project pursues two complementary approaches in tandem.
 
 ```
                      ┌────────────────────────┐
@@ -35,86 +35,84 @@
                                  │
          ┌───────────────────────┴───────────────────────┐
          ▼                                               ▼
-【第1の輪: Oniwa-lm】                             【第2の輪: Oniwa-grow】
-〜 クリーンな土壌の言語モデル 〜                 〜 自己変容・生命アーキテクチャ 〜
-・完全オープンな学習データ                       ・刺激によって配線が育つネットワーク
-・nanoGPT × Rust (Candle)                        ・ヘッブ則、動的ノード分岐、剪定
-・「人間が紡いだ知」の圧縮                       ・「認知・成長の原初的メカニズム」
+[Wheel 1: Oniwa-lm]                             [Wheel 2: Oniwa-grow]
+~ Language Model with Clean Soil ~               ~ Self-Transforming Life Architecture ~
+- Fully open training data                       - Network wiring growing from stimuli
+- nanoGPT × Rust (Pure Rust / Candle)            - Hebbian rules, dynamic node branching, pruning
+- Compression of human-crafted knowledge         - Primitive mechanisms of cognition & growth
          │                                               │
          └───────────────────────┬───────────────────────┘
                                  ▼
-                     【統合：生きている知能】
-           環境との相互作用で自らコードや構造を変容させ、
-           自らの認知を言葉として静かに紡ぐ存在
+                     [Integration: Living Intelligence]
+           Transforms its own code and structure through interaction with the environment,
+           quietly weaving its cognition into words.
 ```
 
 ---
 
-## 3. 第1の輪：`Oniwa-lm`（クリーン言語モデル）
+## 3. Wheel 1: `Oniwa-lm` (Clean Language Model)
 
-### 3.1 目標
-「出自が100%証明できるデータのみ」で学習された、極小・純度100%の言語モデル（SLM）。
+### 3.1 Objective
+A micro-scale, 100% pure small language model (SLM) trained exclusively on data with 100% proven origin.
 
-### 3.2 土壌（データソース選定基準）
-1. **青空文庫**: 著作権消滅（パブリックドメイン）の日本語文学・思想・名著。
-2. **公的・行政オープンデータ**: e-Gov、デジタル庁、白書、官公庁オープンデータ（公的性格が高くライセンス明確）。
-3. **国立国会図書館（NDLラボ）**: デジタルアーカイブのうち、著作権保護期間満了またはオープンライセンスのもの。
-4. **arXiv / オープンサイエンス**: CC0, CC-BYなどの学術論文。
-5. **完全排除対象（農薬）**:
-   * 他社プロプライエタリLLM（GPT-4、Claude、Gemini等）が生成した合成データ
-   * ライセンス不明なWebクロールデータ
+### 3.2 Soil (Data Source Selection Criteria)
+1. **Aozora Bunko**: Public domain Japanese literature, philosophy, and classical works whose copyright has expired.
+2. **Public & Administrative Open Data**: e-Gov, Digital Agency, government whitepapers, and public sector open data (clear licenses and public nature).
+3. **National Diet Library (NDL Lab)**: Digital archives that are either public domain or under permissive open licenses.
+4. **arXiv / Open Science**: Academic papers under CC0, CC-BY, and open access terms.
+5. **Strictly Excluded Targets ("Pesticides")**:
+   * Synthetic data generated by proprietary third-party LLMs (GPT-4, Claude, Gemini, etc.)
+   * Web crawl data with unclear licensing
 
-### 3.3 技術スタック
-* **言語**: Rust（低メモリ、高効率、掌握感）
-* **深層学習フレームワーク**: Hugging Face `candle` または `burn`
-* **トークナイザー**: Hugging Face `tokenizers`（Rustネイティブ）
-* **アーキテクチャ**: Andrej Karpathy氏の `nanoGPT` / `modded-nanogpt` 系統の極めてシンプルで透明なTransformer構造
+### 3.3 Technology Stack
+* **Language**: Rust (low memory footprint, high efficiency, total control)
+* **Deep Learning Framework**: Pure Rust implementation (or Hugging Face `candle` / `burn`)
+* **Tokenizer**: Rust-native character or BPE tokenizer
+* **Architecture**: Simple and transparent Transformer structure inspired by Andrej Karpathy's `nanoGPT` / `llm.c`
 
-### 3.4 トレーサビリティ（生産者ラベル）
-* 学習データの全件カタログ（URL、ライセンス、コンテンツハッシュ）の公開
-* 学習スクリプト、ハイパーパラメータ、Loss推移の完全開示
-
----
-
-## 4. 第2の輪：`Oniwa-grow`（自己変容・生命アーキテクチャ）
-
-### 4.1 目標
-固定サイズのニューラルネットワークではなく、環境からの刺激（インプット）に応じて「細胞分裂のようにノードが生え、使われないシナプスが枯れる」動的成長モデルの実証。
-
-### 4.2 コアメカニズム
-1. **種（Seed）**: 入力センサーと出力のみの最小限の結合からスタート。
-2. **刺激と活性化**: 外界からのシグナル（波形、周期、テキスト刺激など）が流れる。
-3. **神経形態形成（分岐・成長）**:
-   * 高負荷または情報ボトルネックが発生したノードから、新しい隠れノードが自発的に芽吹く。
-   * 「よく同時に発火する経路」が強化される（ヘッブの法則）。
-4. **剪定（Pruning / 代謝）**:
-   * 一定期間シグナルが通過しなかったシナプスやノードは、落ち葉のように枯れて消滅する。
-
-### 4.3 技術的アプローチ
-* **言語**: Rust
-* **データ構造**: アリーナ型メモリ管理（`petgraph` や独自インデックス管理）による安全かつ高速なグラフ更新
-* **シミュレーション**: ターミナル上でノードの増殖・結合・剪定がリアルタイムに視覚化されるCLIツール
+### 3.4 Traceability (Producer Label)
+* Public catalog of all training data (URLs, licenses, content hashes)
+* Complete disclosure of training scripts, hyperparameters, and loss trajectories in the provenance ledger (`logs/ledger_index.jsonl`)
 
 ---
 
-## 5. 開発ロードマップ（新環境への引継ぎ手順）
+## 4. Wheel 2: `Oniwa-grow` (Self-Transforming Life Architecture)
 
-計算リソースの潤沢な開発環境に移行した際の具体的な作業ステップです。
+### 4.1 Objective
+Demonstrating a dynamic growth model where nodes sprout like dividing cells and unused synapses wither in response to environmental stimuli, rather than maintaining a fixed-size network.
 
-### Phase 1: 土壌づくり（データパイプライン構築）
-- [ ] 青空文庫、e-Gov等のテキストクローラーをRustで実装
-- [ ] ルビ削除、正規化、ライセンス情報メタデータ付与を行う前処理パイプラインの構築
-- [ ] クリーンコーパスのSQLite / Parquet形式でのカタログ化
+### 4.2 Core Mechanisms
+1. **Seed**: Starting from minimal connectivity between input sensors and outputs.
+2. **Stimuli & Activation**: Signals from the outside world (waveforms, periodic patterns, text stimuli) flow through the network.
+3. **Neuromorphogenesis (Branching & Growth)**:
+   * New hidden nodes spontaneously sprout from heavily loaded or bottlenecked nodes.
+   * Pathways that frequently fire together are strengthened (Hebbian learning).
+4. **Pruning (Metabolism)**:
+   * Synapses and nodes that receive no signals over time wither and disappear like autumn leaves.
 
-### Phase 2: 小さな種まき（`Oniwa-lm` プロトタイプ）
-- [ ] Rust + `candle` による最小構成のTransformer実装（nanoGPT移植）
-- [ ] 手元で作ったクリーンコーパスのみを流し込み、小規模パラメータ（数百万〜数千万）で事前学習を実行
-- [ ] 「言葉を紡ぐ瞬間」の動作検証と学習メトリクス可視化
+### 4.3 Technical Approach
+* **Language**: Rust
+* **Data Structures**: Arena-allocated memory management (e.g., indexed graphs) for safe and high-speed graph mutations.
+* **Simulation**: CLI tools visualizing node proliferation, connectivity, and pruning in real time in the terminal.
 
-### Phase 3: 芽吹き実験（`Oniwa-grow` プロトタイプ）
-- [ ] グラフ動的更新エンジンの実装（ノード追加・エッジ更新・剪定）
-- [ ] シンプルな環境タスク（パルス予測や時系列認識）を与え、自律的な構造成長を観察・ログ化
+---
 
-### Phase 4: 庭の統合（Cognition & Code）
-- [ ] `Oniwa-grow` の成長メカニズムを、`Oniwa-lm` のトークン認知や推論ルーティングと連動させる融合実験
-- [ ] 自己生成・自己書き換えループの探求
+## 5. Development Roadmap
+
+### Phase 1: Soil Preparation (Data Pipeline Construction)
+- [x] Implement Aozora Bunko, e-Gov, arXiv, and official tech doc crawlers in Rust (`oniwa-pipeline`)
+- [x] Build preprocessing pipeline for ruby removal, normalization, and license metadata attribution
+- [x] Clean corpus cataloging with provenance ledger
+
+### Phase 2: Sowing Small Seeds (`Oniwa-lm` Prototype)
+- [x] Pure Rust minimal Transformer implementation (forward/backward, AdamW, RMSNorm, SwiGLU, RoPE)
+- [x] Ingest clean corpus and pre-train compact parameter models
+- [x] Verify text generation and visualize learning metrics
+
+### Phase 3: Sprouting Experiments (`Oniwa-grow` Prototype)
+- [ ] Implement dynamic graph mutation engine (node addition, edge updates, pruning)
+- [ ] Feed simple environmental tasks (pulse prediction, sequence recognition) and log autonomous structural growth
+
+### Phase 4: Garden Integration (Cognition & Code)
+- [ ] Integrate `Oniwa-grow` dynamic mechanisms with `Oniwa-lm` token cognition and inference routing
+- [ ] Explore self-generation and self-rewriting feedback loops

@@ -1,4 +1,4 @@
-//! oniwa-decide 包括的ユニットテスト
+//! Comprehensive Unit Tests for oniwa-decide
 
 use oniwa_decide::dataset::DocCategory;
 use oniwa_decide::loss::LossCalculator;
@@ -23,11 +23,11 @@ fn test_loss_functions() {
     // 3. Noul Loss
     let (loss_t, d_t) = LossCalculator::noul_loss(2.0, true, 0.1);
     assert!(loss_t > 0.0);
-    assert!(d_t < 0.0); // 確率が高く正解がtrueなので勾配は負（ロジットを上げる方向）
+    assert!(d_t < 0.0); // High prob and target is true -> negative grad (pushes logit up)
 
     let (loss_f, d_f) = LossCalculator::noul_loss(2.0, false, 0.1);
     assert!(loss_f > loss_t);
-    assert!(d_f > 0.0); // 確率が高いのに正解がfalseなので勾配は正（ロジットを下げる方向）
+    assert!(d_f > 0.0); // High prob but target is false -> positive grad (pushes logit down)
 
     // 4. Score Loss
     let (s_loss, s_grad) = LossCalculator::score_loss(3.5, 3.0, 0.5);
@@ -61,7 +61,7 @@ fn test_forward_dimensions_and_properties() {
     assert_eq!(cache.noul_logits.len(), b);
     assert_eq!(cache.score_preds.len(), b);
 
-    // 推論 API のテスト
+    // Test inference API
     let single_tokens = &tokens[..t];
     let dec = model.decide(single_tokens);
     let sum_p: f32 = dec.choice_probs.iter().sum();
@@ -73,7 +73,7 @@ fn test_forward_dimensions_and_properties() {
 
 #[test]
 fn test_finite_difference_gradcheck() {
-    // 最小規模モデルでの有限差分勾配チェック
+    // Finite-difference gradient check on minimal model
     let config = DecisionConfig {
         vocab_size: 20,
         seq_len: 4,
@@ -96,11 +96,11 @@ fn test_finite_difference_gradcheck() {
     let target_noul = true;
     let target_score = 3.5f32;
 
-    // 順伝播
+    // Forward pass
     model.zero_grad();
     let cache = model.forward(&tokens, b, t);
 
-    // 損失と逆伝播用勾配
+    // Loss and backward gradients
     let (l_c, d_c) = LossCalculator::choice_loss(&cache.choice_logits, target_choice, 2, 0.0);
     let (l_n, d_n) = LossCalculator::noul_loss(cache.noul_logits[0], target_noul, 0.0);
     let (l_s, d_s) = LossCalculator::score_loss(cache.score_preds[0], target_score, 0.5);
@@ -108,7 +108,7 @@ fn test_finite_difference_gradcheck() {
 
     model.backward(&tokens, &cache, &d_c, &[d_n], &[d_s], b, t);
 
-    // ヘッドパラメータの有限差分チェック
+    // Finite-difference check on head parameters
     let test_param_idx = model.offset_head_choice;
     let analytic_grad = model.grads[test_param_idx];
 
@@ -127,7 +127,7 @@ fn test_finite_difference_gradcheck() {
     let (l_s_m, _) = LossCalculator::score_loss(cache_m.score_preds[0], target_score, 0.5);
     let loss_minus = l_c_m + l_n_m + l_s_m;
 
-    model.params[test_param_idx] += eps; // 復元
+    model.params[test_param_idx] += eps; // Restore parameter
 
     let numerical_grad = (loss_plus - loss_minus) / (2.0 * eps);
 
@@ -168,7 +168,7 @@ fn test_single_step_optimization() {
     let target_nouls = [false, true];
     let target_scores = [2.0, 4.0];
 
-    // ステップ前 Loss
+    // Pre-step loss
     model.zero_grad();
     let cache1 = model.forward(&tokens, b, t);
     let mut loss1 = 0.0f32;
@@ -196,7 +196,7 @@ fn test_single_step_optimization() {
     model.backward(&tokens, &cache1, &d_c, &d_n, &d_s, b, t);
     model.adamw_step(0.01, 0.0, 0.9, 0.999, 1e-8, 1);
 
-    // ステップ後 Loss
+    // Post-step loss
     let cache2 = model.forward(&tokens, b, t);
     let mut loss2 = 0.0f32;
     for bi in 0..b {

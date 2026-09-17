@@ -1,27 +1,27 @@
-//! 青空文庫テキストのクレンジングエンジン
+//! Text cleaning engine for Aozora Bunko
 //!
-//! 青空文庫特有のマークアップ（ルビ記法、入力者注記、ヘッダー、底本フッターなど）を
-//! 高精度に除去し、機械学習に最適なクリーンなテキストに正規化します。
+//! Cleans and normalizes Aozora Bunko markups (ruby annotations, editor notes,
+//! headers, bibliographical footers) to produce clean text optimal for language modeling.
 
-/// 青空文庫テキストをクレンジングして本文のみを抽出する
+/// Clean Aozora Bunko text and extract main body text
 pub fn clean_aozora_text(raw_text: &str) -> String {
-    // 1. 本文ブロックの切り出し（ヘッダーとフッターの除去）
+    // 1. Extract body text block (strip header and footer)
     let body_text = extract_body(raw_text);
 
-    // 2. ルビ記法と入力者注記の除去
+    // 2. Remove ruby annotations and editor notes
     let cleaned = strip_markup(&body_text);
 
-    // 3. 空白行・改行の正規化
+    // 3. Normalize blank lines and newlines
     normalize_newlines(&cleaned)
 }
 
-/// ヘッダー（タイトル・記号説明）およびフッター（底本情報）を切り離し、本文を抽出
+/// Strip header (title and symbol explanation) and footer (bibliographical notes) to extract body
 fn extract_body(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let mut start_idx = 0;
     let mut end_idx = lines.len();
 
-    // 青空文庫の区切り線 "------..." を検出
+    // Detect Aozora Bunko divider line "------..."
     let mut divider_count = 0;
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -34,7 +34,7 @@ fn extract_body(text: &str) -> String {
         }
     }
 
-    // フッター（底本情報など）の開始位置を検出
+    // Detect start of footer notes
     for (i, line) in lines.iter().enumerate().skip(start_idx) {
         let trimmed = line.trim();
         if trimmed.starts_with("底本：") || trimmed.starts_with("底本:") {
@@ -50,7 +50,7 @@ fn extract_body(text: &str) -> String {
     }
 }
 
-/// ルビ記法（《...》、｜）と入力者注（［＃...］）の除去
+/// Strip ruby annotations (《...》, ｜) and editor notes (［＃...］)
 fn strip_markup(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let chars: Vec<char> = text.chars().collect();
@@ -60,13 +60,13 @@ fn strip_markup(text: &str) -> String {
     while i < n {
         let ch = chars[i];
 
-        // 1. ルビの親文字区切り記号 '｜' (全角) or '|' (半角)
+        // 1. Ruby parent-word delimiter '｜' (full-width) or '|' (half-width)
         if ch == '｜' || ch == '|' {
             i += 1;
             continue;
         }
 
-        // 2. ルビ 《...》 の除去
+        // 2. Strip ruby 《...》
         if ch == '《' {
             i += 1;
             while i < n && chars[i] != '》' {
@@ -78,7 +78,7 @@ fn strip_markup(text: &str) -> String {
             continue;
         }
 
-        // 3. 入力者注 ［＃...］ または [#...] の除去
+        // 3. Strip editor notes ［＃...］ or [#...]
         if ch == '［' && i + 1 < n && chars[i + 1] == '＃' {
             i += 2;
             while i < n && chars[i] != '］' {
@@ -107,7 +107,7 @@ fn strip_markup(text: &str) -> String {
     result
 }
 
-/// 連続する空行を圧縮し、前後の余白をトリム
+/// Compress consecutive blank lines and trim whitespace
 fn normalize_newlines(text: &str) -> String {
     let mut normalized = String::with_capacity(text.len());
     let mut empty_line_count = 0;

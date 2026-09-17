@@ -1,10 +1,11 @@
-//! 信頼度較正およびマルチタスク損失関数 (Calibrated Multi-Task Loss)
+//! Calibrated Multi-Task Loss Functions
 //!
-//! TypeSafe AI「Jev」の思想（RLCD: Calibrated Decisions）をピュアRustで具現化。
-//! - Choice: Label Smoothing 付き Cross Entropy
-//! - Noul: Brier Score 正則化付き Binary Cross Entropy
-//! - Score: Smooth L1 (Huber) 損失
-//! - Temperature Scaling による確信度較正
+//! Pure-Rust implementation of confidence calibration and multi-task loss functions
+//! inspired by TypeSafe AI's RLCD (Reinforcement Learning from Calibrated Decisions):
+//! - Choice: Cross Entropy with Label Smoothing
+//! - Noul: Binary Cross Entropy with Brier Score Regularization
+//! - Score: Smooth L1 (Huber) Loss
+//! - Temperature Scaling for Calibrated Confidence
 
 #[derive(Clone, Debug)]
 pub struct LossConfig {
@@ -32,7 +33,7 @@ impl Default for LossConfig {
 pub struct LossCalculator;
 
 impl LossCalculator {
-    /// Softmax の計算 (温度パラメータ適用)
+    /// Compute Softmax with temperature scaling
     pub fn softmax(logits: &[f32], temperature: f32) -> Vec<f32> {
         let temp = temperature.max(1e-4);
         let max_val = logits
@@ -53,15 +54,15 @@ impl LossCalculator {
         exps
     }
 
-    /// シグモイドの計算
+    /// Compute Sigmoid function
     #[inline(always)]
     pub fn sigmoid(x: f32) -> f32 {
         1.0f32 / (1.0f32 + (-x).exp())
     }
 
-    /// Choice 損失と勾配 (Cross Entropy + Label Smoothing)
+    /// Choice Loss and Gradient (Cross Entropy + Label Smoothing)
     ///
-    /// 戻り値: (loss, dlogits)
+    /// Returns: (loss, dlogits)
     #[allow(clippy::needless_range_loop)]
     pub fn choice_loss(
         logits: &[f32],
@@ -89,9 +90,9 @@ impl LossCalculator {
         (loss, dlogits)
     }
 
-    /// Noul 損失と勾配 (Binary Cross Entropy + Brier Score)
+    /// Noul Loss and Gradient (Binary Cross Entropy + Brier Score)
     ///
-    /// 戻り値: (loss, dlogit)
+    /// Returns: (loss, dlogit)
     pub fn noul_loss(logit: f32, target: bool, brier_weight: f32) -> (f32, f32) {
         let p = Self::sigmoid(logit);
         let y = if target { 1.0f32 } else { 0.0f32 };
@@ -109,9 +110,9 @@ impl LossCalculator {
         (total_loss, grad)
     }
 
-    /// Score 損失と勾配 (Smooth L1 / Huber)
+    /// Score Loss and Gradient (Smooth L1 / Huber)
     ///
-    /// 戻り値: (loss, dpred)
+    /// Returns: (loss, dpred)
     pub fn score_loss(pred: f32, target: f32, delta: f32) -> (f32, f32) {
         let diff = pred - target;
         let abs_diff = diff.abs();

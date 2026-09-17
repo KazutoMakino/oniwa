@@ -1,37 +1,37 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// ハードウェア別の電力特性プロファイル
+/// Hardware-specific power profile.
 #[derive(Debug, Clone)]
 pub struct PowerProfile {
-    /// 名前・説明
+    /// Profile name or description
     pub name: String,
-    /// アイドル時消費電力 (W)
+    /// Idle power consumption (W)
     pub idle_watts: f32,
-    /// フル稼働時の追加消費電力 (W)
+    /// Additional power consumption under full load (W)
     pub busy_watts_delta: f32,
 }
 
 impl PowerProfile {
-    /// Raspberry Pi 4 Model B の実測特性 (5V駆動)
+    /// Measured characteristics for Raspberry Pi 4 Model B (5V power supply)
     pub fn raspberry_pi_4() -> Self {
         Self {
-            name: "Raspberry Pi 4 (5V 低消費電力モデル)".to_string(),
-            idle_watts: 2.7,       // アイドル: 約 2.7W (5V 0.54A)
-            busy_watts_delta: 3.5, // 4コアフル負荷時: 約 6.2W (2.7W + 3.5W)
+            name: "Raspberry Pi 4 (5V low-power model)".to_string(),
+            idle_watts: 2.7,       // Idle: ~2.7W (5V 0.54A)
+            busy_watts_delta: 3.5, // 4-core full load: ~6.2W (2.7W + 3.5W)
         }
     }
 
-    /// 一般的な省電力ノートPC/ミニPC向けプロファイル
+    /// Profile for general low-power laptop / mini PC
     pub fn generic_pc() -> Self {
         Self {
-            name: "省電力ノートPC / ミニPC (推定)".to_string(),
+            name: "Low-Power Laptop / Mini PC (Estimated)".to_string(),
             idle_watts: 10.0,
             busy_watts_delta: 25.0,
         }
     }
 
-    /// システム環境 (/proc/cpuinfo 等) から最適なプロファイルを動的に推定
+    /// Dynamically estimate optimal profile from system environment (/proc/cpuinfo, etc.)
     pub fn detect_from_system() -> Self {
         let arch = std::env::consts::ARCH;
         if arch == "aarch64" || arch == "arm" {
@@ -46,13 +46,13 @@ impl PowerProfile {
             .map(|s| s.trim())
             .unwrap_or("Generic CPU");
 
-        // 省電力モバイル向けCPU (Uシリーズ, 低TDP)
+        // Low-power mobile CPUs (U series, low TDP)
         if cpu_name.contains(" U")
             || cpu_name.contains("Mobile")
             || cpu_name.contains("Core i") && cpu_name.contains('U')
         {
             Self {
-                name: format!("モバイル省電力CPU: {}", cpu_name),
+                name: format!("Mobile Low-Power CPU: {}", cpu_name),
                 idle_watts: 8.0,
                 busy_watts_delta: 20.0,
             }
@@ -61,13 +61,13 @@ impl PowerProfile {
             || cpu_name.contains("Threadripper")
         {
             Self {
-                name: format!("サーバー/ワークステーションCPU: {}", cpu_name),
+                name: format!("Server/Workstation CPU: {}", cpu_name),
                 idle_watts: 45.0,
                 busy_watts_delta: 120.0,
             }
         } else {
             Self {
-                name: format!("デスクトップ/標準PC: {}", cpu_name),
+                name: format!("Desktop/Standard PC: {}", cpu_name),
                 idle_watts: 15.0,
                 busy_watts_delta: 45.0,
             }
@@ -75,7 +75,7 @@ impl PowerProfile {
     }
 }
 
-/// 電力測定ソース（実測センサー または 動的プロファイル）
+/// Power measurement source (hardware sensor or dynamic profile)
 enum PowerSource {
     HardwareSensor {
         path: PathBuf,
@@ -85,33 +85,33 @@ enum PowerSource {
     EstimatedProfile(PowerProfile),
 }
 
-/// 電力読み取り結果（計算専用の純電力 と PC全体の総電力）
+/// Power reading result (net computation power and gross system power)
 #[derive(Debug, Clone, Copy)]
 pub struct PowerReading {
-    /// この計算にのみかかった純粋な瞬間追加電力 (W)
+    /// Instantaneous net power consumed purely by this computation (W)
     pub net_watts: f32,
-    /// PC全体の瞬間消費電力 (W)
+    /// Instantaneous gross power consumed by entire system (W)
     pub gross_watts: f32,
-    /// この計算にのみかかった累積電力量 (Wh)
+    /// Cumulative net energy consumed purely by this computation (Wh)
     pub net_accum_wh: f32,
-    /// PC全体の累積電力量 (Wh)
+    /// Cumulative gross energy consumed by entire system (Wh)
     pub gross_accum_wh: f32,
 }
 
-/// 累積消費電力を計算・記録するトラッカー
+/// Tracker for calculating and logging cumulative power consumption.
 pub struct PowerTracker {
     source: PowerSource,
     fallback_profile: PowerProfile,
-    /// 平常時（アイドル時）のベースライン電力 (W)
+    /// Baseline idle power consumption (W)
     baseline_watts: f64,
-    /// 計算にのみかかった累積消費エネルギー (ジュール: J = W * 秒)
+    /// Cumulative net energy consumed purely by computation (Joules: J = W * s)
     total_net_joules: f64,
-    /// PC全体の総累積消費エネルギー (ジュール: J = W * 秒)
+    /// Cumulative gross energy consumed by entire system (Joules: J = W * s)
     total_gross_joules: f64,
 }
 
 impl PowerTracker {
-    /// 静的プロファイルから生成（従来互換）
+    /// Create from static profile (backward compatibility)
     pub fn new(profile: PowerProfile) -> Self {
         let baseline = profile.idle_watts as f64;
         Self {
@@ -123,11 +123,11 @@ impl PowerTracker {
         }
     }
 
-    /// ハードウェアの実測センサーまたは最適なシステムプロファイルを自動検出して初期化
+    /// Auto-detect hardware power sensors or optimal system profile and initialize.
     pub fn auto_detect() -> Self {
         let fallback = PowerProfile::detect_from_system();
 
-        // 1. hwmon の電力センサーを探索
+        // 1. Search for hwmon power sensors
         if let Some((path, desc, is_uw)) = Self::detect_hwmon_power_sensor() {
             let baseline = Self::measure_initial_baseline(&path, is_uw, fallback.idle_watts as f64);
             return Self {
@@ -143,7 +143,7 @@ impl PowerTracker {
             };
         }
 
-        // 2. power_supply (バッテリー等) の電力センサーを探索
+        // 2. Search for power_supply (battery, etc.) power sensors
         if let Some((path, desc)) = Self::detect_power_supply_sensor() {
             let baseline = Self::measure_initial_baseline(&path, true, fallback.idle_watts as f64);
             return Self {
@@ -159,7 +159,7 @@ impl PowerTracker {
             };
         }
 
-        // 3. センサーが取れない場合は動的プロファイル推定
+        // 3. Fallback to dynamic profile estimation if no sensor found
         let baseline = fallback.idle_watts as f64;
         Self {
             source: PowerSource::EstimatedProfile(fallback.clone()),
@@ -170,7 +170,7 @@ impl PowerTracker {
         }
     }
 
-    /// 学習開始直前の平常時（アイドル時）ベースライン電力をサンプリング測定
+    /// Sample baseline idle power immediately before training starts.
     fn measure_initial_baseline(path: &Path, is_uw: bool, fallback: f64) -> f64 {
         let mut sum = 0.0;
         let mut count = 0;
@@ -197,7 +197,7 @@ impl PowerTracker {
         }
     }
 
-    /// hwmon 下の電力センサーを探索（AMD PPT: Package Power Tracking 等）
+    /// Search for power sensors under hwmon (e.g. AMD PPT: Package Power Tracking)
     fn detect_hwmon_power_sensor() -> Option<(PathBuf, String, bool)> {
         if let Ok(entries) = fs::read_dir("/sys/class/hwmon") {
             let mut hwmon_dirs: Vec<PathBuf> = entries
@@ -237,7 +237,7 @@ impl PowerTracker {
                                             format!("{} ({})", hwmon_name, fname)
                                         };
 
-                                        // Linux sysfs の power*_input は通常マイクロワット (uW)
+                                        // Linux sysfs power*_input is usually in microwatts (uW)
                                         let is_microwatts = val > 1000.0;
                                         return Some((file, desc, is_microwatts));
                                     }
@@ -251,7 +251,7 @@ impl PowerTracker {
         None
     }
 
-    /// power_supply 下の電力センサーを探索
+    /// Search for power sensors under power_supply
     fn detect_power_supply_sensor() -> Option<(PathBuf, String)> {
         if let Ok(entries) = fs::read_dir("/sys/class/power_supply") {
             for entry in entries.filter_map(|e| e.ok().map(|e| e.path())) {
@@ -272,34 +272,34 @@ impl PowerTracker {
         None
     }
 
-    /// 現在使用中の電力測定ソースの説明
+    /// Description of current power measurement source
     pub fn source_description(&self) -> String {
         match &self.source {
             PowerSource::HardwareSensor { desc, .. } => {
-                format!("実測ハードウェア電力センサー: {}", desc)
+                format!("Hardware power sensor: {}", desc)
             }
             PowerSource::EstimatedProfile(prof) => {
-                format!("推定電力モデル: {}", prof.name)
+                format!("Estimated power model: {}", prof.name)
             }
         }
     }
 
-    /// 実測センサーが稼働しているか
+    /// Whether a hardware power sensor is active
     pub fn is_hardware_sensor(&self) -> bool {
         matches!(self.source, PowerSource::HardwareSensor { .. })
     }
 
-    /// 平常時（アイドル時）のベースライン電力 (W)
+    /// Baseline idle power (W)
     pub fn baseline_watts(&self) -> f32 {
         self.baseline_watts as f32
     }
 
-    /// ステップ終了ごとに呼び出し、消費電力を取得/推定して累積
+    /// Call at the end of each step to record/estimate power consumption and accumulate energy.
     ///
-    /// - `calc_duration_ms`: 実際の計算時間 (ms)
-    /// - `sleep_duration_ms`: 熱スロットリング等の待機スリープ時間 (ms)
+    /// - `calc_duration_ms`: Actual computation time (ms)
+    /// - `sleep_duration_ms`: Idle/throttling sleep time (ms)
     ///
-    /// 戻り値: PowerReading
+    /// Returns: PowerReading
     pub fn tick(&mut self, calc_duration_ms: u128, sleep_duration_ms: u64) -> PowerReading {
         let total_ms = (calc_duration_ms + sleep_duration_ms as u128).max(1);
         let delta_seconds = (total_ms as f64) / 1000.0;
@@ -331,14 +331,14 @@ impl PowerTracker {
             }
         };
 
-        // この計算のみにかかった純電力 (Gross - Baseline)
+        // Net power consumed purely by this computation (Gross - Baseline)
         let net_watts = (gross_watts - self.baseline_watts).max(0.0);
 
-        // PC全体のエネルギー (総電力 × 全時間)
+        // Entire system energy (gross power * total duration)
         let delta_gross_joules = gross_watts * delta_seconds;
         self.total_gross_joules += delta_gross_joules;
 
-        // 計算にのみかかった純エネルギー (純増電力 × 実計算時間)
+        // Energy consumed purely by computation (net power * actual computation time)
         let delta_net_joules = net_watts * calc_seconds;
         self.total_net_joules += delta_net_joules;
 
@@ -359,28 +359,28 @@ impl PowerTracker {
             + (self.fallback_profile.busy_watts_delta as f64 * activity_ratio)
     }
 
-    /// この計算にのみかかった累積電力量 (Wh) [主指標]
+    /// Cumulative energy consumed purely by this computation (Wh) [Primary Metric]
     pub fn total_net_wh(&self) -> f32 {
         (self.total_net_joules / 3600.0) as f32
     }
 
-    /// PC全体の累積総電力量 (Wh) [参考指標]
+    /// Cumulative gross energy consumed by the entire system (Wh) [Reference Metric]
     pub fn total_gross_wh(&self) -> f32 {
         (self.total_gross_joules / 3600.0) as f32
     }
 
-    /// 従来互換の累積電力量（計算専用の純Whを返します）
+    /// Backward-compatible cumulative Wh (returns net computation Wh)
     pub fn total_wh(&self) -> f32 {
         self.total_net_wh()
     }
 
-    /// 推定CO2排出量 (グラム: g-CO2) - 計算専用電力量から算出
-    /// ※ 日本の平均的な電力排出係数 (約 0.43 kg-CO2 / kWh = 0.43 g-CO2 / Wh) を基準
+    /// Estimated CO2 emissions in grams (g-CO2) derived from net computation Wh.
+    /// Uses standard grid emission factor (~0.43 kg-CO2 / kWh = 0.43 g-CO2 / Wh).
     pub fn equivalent_co2_grams(&self) -> f32 {
         self.total_net_wh() * 0.43
     }
 
-    /// 推定電気代 (円) - 計算専用電力量から算出 (1kWh = 31円換算)
+    /// Estimated electricity cost in Japanese Yen derived from net computation Wh (~31 JPY / kWh).
     pub fn cost_yen(&self) -> f32 {
         self.total_net_wh() * 0.031
     }
@@ -394,19 +394,19 @@ mod tests {
     fn test_power_tracker_pi4() {
         let mut tracker = PowerTracker::new(PowerProfile::raspberry_pi_4());
 
-        // 1秒間フル稼働 (スリープなし)
+        // 1 second full load (no sleep)
         let reading = tracker.tick(1000, 0);
-        // 総電力: 6.2W, 純電力: 3.5W
+        // Gross power: 6.2W, Net power: 3.5W
         assert!((reading.gross_watts - 6.2).abs() < 0.1);
         assert!((reading.net_watts - 3.5).abs() < 0.1);
         assert!(reading.net_accum_wh > 0.0);
         assert!(reading.gross_accum_wh > reading.net_accum_wh);
 
-        // 累積Wh検証: 3.5W * 1秒 = 3.5 J = 3.5 / 3600 Wh ≈ 0.00097 Wh
+        // Cumulative Wh verification: 3.5W * 1s = 3.5 J = 3.5 / 3600 Wh ~ 0.00097 Wh
         let expected_net_wh = 3.5 / 3600.0;
         assert!((tracker.total_net_wh() - expected_net_wh).abs() < 1e-4);
 
-        // CO2排出量検証
+        // CO2 emission verification
         assert!(tracker.equivalent_co2_grams() > 0.0);
     }
 }

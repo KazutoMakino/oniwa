@@ -1,63 +1,63 @@
-# Phase 3 追補4: グリーンエネルギー & 推定消費電力トラッカー仕様
+# Phase 3 Addendum 4: Green Energy & Real-Time Power Tracking Specifications
 
-巨大IT企業が推進するフロンティアAIモデルの学習は、1回あたり数百メガワット（MW）からギガワット時（GWh）規模の電力を浪費し、小都市や原子力発電所1基分に匹敵する環境負荷を与えていることが世界的な懸念となっています。
+Training frontier AI models by mega-corporations consumes hundreds of megawatts to gigawatt-hours per run, generating environmental burdens comparable to entire small cities or nuclear plants.
 
-これに対する痛烈なアンチテーゼとして、`niwa-lm` は**「学習にかかった全エネルギー・電力消費量・CO2排出量を1ステップ単位でリアルタイム計測・証明する」** という **Green & Eco Provenance 機構** を搭載しています。
+As a direct antithesis, `oniwa-lm` incorporates a **Green & Eco Provenance Engine** that tracks, records, and verifies **energy consumption, power dissipation, and carbon emissions at every single training step in real time**.
 
 ---
 
-## 1. ハードウェア別消費電力モデル
+## 1. Hardware Power Consumption Models
 
-### 1.1 Raspberry Pi 4 Model B (5V 駆動)
-* **アイドル時 ($P_{\text{idle}}$)**: 約 $2.7\text{W}$ ($5\text{V} \times 0.54\text{A}$)
-* **4コアフル負荷時 ($P_{\text{peak}}$)**: 約 $6.2\text{W}$ ($5\text{V} \times 1.24\text{A}$)
-* **追加電力 ($\Delta P_{\text{busy}}$)**: $3.5\text{W}$
+### 1.1 Raspberry Pi 4 Model B (5V DC)
+* **Idle ($P_{\text{idle}}$)**: ~2.7 W ($5\text{V} \times 0.54\text{A}$)
+* **4-Core Peak Load ($P_{\text{peak}}$)**: ~6.2 W ($5\text{V} \times 1.24\text{A}$)
+* **Busy Delta ($\Delta P_{\text{busy}}$)**: 3.5 W
 
-### 1.2 瞬間電力とエネルギー積算の計算式（Net電力 vs Gross電力）
-ステップ $i$ における計算時間を $\Delta t_{\text{calc}}$、熱スロットリング待機時間を $\Delta t_{\text{sleep}}$、平常時アイドル電力を $P_{\text{baseline}}$ とすると：
+### 1.2 Instantaneous Power and Energy Formulations (Net vs. Gross)
+For step $i$ with compute duration $\Delta t_{\text{calc}}$, cooling sleep duration $\Delta t_{\text{sleep}}$, and baseline idle power $P_{\text{baseline}}$:
 
-* **ハードウェア総電力 (Gross Power)**:
-  センサー実測値（AMD PPT等）またはプロファイル $P_{\text{gross}}$
-* **計算専用の純追加電力 (Net Computation Power)**:
+* **Gross Hardware Power**:
+  Sensor telemetry (e.g. AMD PPT) or calibrated hardware profile $P_{\text{gross}}$
+* **Net Computation Power**:
   $$P_{\text{net}} = \max(0, P_{\text{gross}} - P_{\text{baseline}}) \quad [\text{W}]$$
 
-* **ステップ消費エネルギー**:
-  - 純計算エネルギー: $\Delta E_{\text{net}, i} = P_{\text{net}} \times \Delta t_{\text{calc}} \quad [\text{J}]$
-  - ハードウェア総エネルギー: $\Delta E_{\text{gross}, i} = P_{\text{gross}} \times (\Delta t_{\text{calc}} + \Delta t_{\text{sleep}}) \quad [\text{J}]$
+* **Per-Step Energy Dissipation**:
+  - Net Compute Energy: $\Delta E_{\text{net}, i} = P_{\text{net}} \times \Delta t_{\text{calc}} \quad [\text{J}]$
+  - Gross Hardware Energy: $\Delta E_{\text{gross}, i} = P_{\text{gross}} \times (\Delta t_{\text{calc}} + \Delta t_{\text{sleep}}) \quad [\text{J}]$
 
-* **累積電力量**:
+* **Cumulative Energy**:
   $$E_{\text{net}} = \frac{\sum \Delta E_{\text{net}, i}}{3600} \quad [\text{Wh}]$$
   $$E_{\text{gross}} = \frac{\sum \Delta E_{\text{gross}, i}}{3600} \quad [\text{Wh}]$$
 
 > [!NOTE]
-> 主指標となる電気代およびCO2排出量は、PC本体のバックグラウンド待機電力を除外した**「純粋にこの知能獲得計算にのみ投じられた Net エネルギー」** を基準として誠実に算出されます。
+> Primary ecological metrics (cost, CO2 emissions) are calculated against **Net Energy**—reflecting purely the energy directly committed to cognitive parameter acquisition, excluding background machine idle overhead.
 
 ---
 
-## 2. 環境負荷・エコ指標の換算
+## 2. Ecological Impact Metrics
 
-### 2.1 推定CO2排出量
-日本の平均電力排出係数（約 $0.43 \text{ kg-CO}_2 / \text{kWh} = 0.43 \text{ g-CO}_2 / \text{Wh}$）を基準に算出：
+### 2.1 Estimated Carbon Footprint
+Calculated using the Japanese grid emissions factor (~0.43 kg-CO2/kWh = 0.43 g-CO2/Wh):
 
-$$\text{CO}_2 \text{ 排出量 (g)} = E_{\text{total}} (\text{Wh}) \times 0.43$$
+$$\text{CO}_2 \text{ Emissions (g)} = E_{\text{total}} (\text{Wh}) \times 0.43$$
 
-### 2.2 電気代換算
-家庭用電気料金の標準単価（$31 \text{ 円/kWh} = 0.031 \text{ 円/Wh}$）を基準に算出：
+### 2.2 Electricity Cost
+Calculated using the standard household electricity rate (~31 JPY / kWh = 0.031 JPY / Wh):
 
-$$\text{推定電気代 (円)} = E_{\text{total}} (\text{Wh}) \times 0.031$$
+$$\text{Estimated Electricity Cost (JPY)} = E_{\text{total}} (\text{Wh}) \times 0.031$$
 
 ---
 
-## 3. アンチテーゼとしてのインパクト（比較）
+## 3. The Counter-Narrative: Comparative Impact
 
-| 比較項目 | 巨大商用LLM (GPT-4等) | 家庭菜園モデル (`niwa-lm` on Pi 4) |
+| Comparison | Massive Commercial LLM (GPT-4 class) | Kitchen Garden Model (`oniwa-lm` on Pi 4) |
 | :--- | :--- | :--- |
-| **計算インフラ** | H100 GPU 数万枚の巨大クラスタ | 手のひらサイズの基板 1 枚 |
-| **消費電力量** | 数千万 〜 数億 Wh (GWh級) | **約 1 〜 5 Wh** |
-| **推定電気代** | 数億円 〜 数十億円 | **約 0.03 円 〜 0.15 円（1円未満！）** |
-| **日常の目安** | 発電所1基分の常時稼働 | **スマホの充電1回（約15Wh）の数分の一** |
-| **環境影響** | 数万トンのCO2排出 | 呼気数回分（1g未満のCO2） |
+| **Compute Infrastructure** | Tens of thousands of H100 GPUs | Single palm-sized credit-card board |
+| **Energy Consumption** | Millions to billions of Wh (GWh class) | **~1 to 5 Wh** |
+| **Electricity Cost** | Millions of USD | **< $0.01 (Under 1 Japanese Yen!)** |
+| **Everyday Equivalent** | Running an entire power plant continuously | **A fraction of a single smartphone charge (~15Wh)** |
+| **Carbon Footprint** | Tens of thousands of metric tons of CO2 | Less than a few human exhalations (< 1g CO2) |
 
 > [!TIP]
-> **「自給自足・家庭菜園AI」の誇り**  
-> 学習完了時に表示されるこのエコ実績サマリーは、誰かに依存したブラックボックスではなく、**「自分の部屋のわずかな電気と自然の理だけで育ち切った」** という何よりの自立の証拠となります。
+> **The Dignity of Self-Sufficient Organic AI**  
+> The eco-summary printed at training completion provides irrefutable proof that this intelligence was cultivated using only minimal local electricity and pure mathematics, free from extractive data-center dependencies.

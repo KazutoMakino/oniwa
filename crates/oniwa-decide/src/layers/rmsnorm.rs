@@ -1,12 +1,12 @@
-//! RMSNorm (Root Mean Square Normalization) 層
+//! RMSNorm (Root Mean Square Normalization) layer
 //!
-//! LLaMA / Gemma などの現代的アーキテクチャで採用されている高速かつ安定した正規化。
+//! Fast and numerically stable normalization adopted in modern architectures like LLaMA / Gemma.
 //! y = x / RMS(x) * weight
 
 pub struct RMSNorm;
 
 impl RMSNorm {
-    /// 順伝播
+    /// Forward pass
     pub fn forward(
         out: &mut [f32],
         rstd: &mut [f32],
@@ -34,7 +34,7 @@ impl RMSNorm {
         }
     }
 
-    /// 逆伝播
+    /// Backward pass
     #[allow(clippy::too_many_arguments)]
     pub fn backward(
         dinp: &mut [f32],

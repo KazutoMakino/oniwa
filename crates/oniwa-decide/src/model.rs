@@ -1,10 +1,10 @@
-//! 双方向 Transformer 決定モデル (System One Decision Model)
+//! Bidirectional Transformer Decision Model (System One Decision Model)
 //!
-//! - 入力: トークン系列 [B, T]
-//! - 双方向 Transformer エンコーダ (RoPE + RMSNorm + SwiGLU)
-//! - Mean Pooling による固定長文脈ベクトル h [B, C]
-//! - 3つの決定ヘッド (ChoiceHead, NoulHead, ScoreHead)
-//! - 単一フォワードパスで型安全な決定を出力
+//! - Input: Token sequence [B, T]
+//! - Bidirectional Transformer Encoder (RoPE + RMSNorm + SwiGLU)
+//! - Mean Pooling produces a fixed-length context vector h [B, C]
+//! - Three decision heads (ChoiceHead, NoulHead, ScoreHead)
+//! - Outputs type-safe decisions in a single forward pass
 
 use crate::layers::{BidirectionalSelfAttention, RMSNorm, SwiGLU};
 use crate::loss::LossCalculator;
@@ -46,7 +46,7 @@ impl Default for DecisionConfig {
     }
 }
 
-/// 単一サンプルの決定出力
+/// Decision output for a single sample
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RawDecision {
     pub choice_probs: Vec<f32>,
@@ -61,13 +61,13 @@ pub struct RawDecision {
 
 pub struct DecisionModel {
     pub config: DecisionConfig,
-    // パラメータ
+    // Parameters
     pub params: Vec<f32>,
     pub grads: Vec<f32>,
-    pub m: Vec<f32>, // AdamW 1次モーメント
-    pub v: Vec<f32>, // AdamW 2次モーメント
+    pub m: Vec<f32>, // AdamW 1st moment
+    pub v: Vec<f32>, // AdamW 2nd moment
 
-    // パラメータオフセット
+    // Parameter offsets
     pub offset_wte: usize,
     pub offset_layers: Vec<LayerOffsets>,
     pub offset_ln_f: usize,
@@ -86,7 +86,7 @@ pub struct LayerOffsets {
     pub mlp_w_down: usize,
 }
 
-/// レイヤーごとの順伝播キャッシュ (逆伝播用)
+/// Forward pass activation cache per layer (used in backward pass)
 pub struct LayerCache {
     pub x1: Vec<f32>,
     pub rstd1: Vec<f32>,
@@ -162,7 +162,7 @@ impl DecisionModel {
         let total_params = offset;
         let mut params = vec![0.0f32; total_params];
 
-        // Xavier / Glorot 初期化
+        // Xavier / Glorot initialization
         let scale_wte = (2.0f32 / (v + c) as f32).sqrt();
         for i in 0..v * c {
             params[offset_wte + i] = (rng.next_f32() * 2.0 - 1.0) * scale_wte;
@@ -227,7 +227,7 @@ impl DecisionModel {
         self.grads.fill(0.0);
     }
 
-    /// 順伝播
+    /// Forward pass
     pub fn forward(&self, tokens: &[u16], b: usize, t: usize) -> ForwardCache {
         let c = self.config.dim;
         let n = b * t;
@@ -245,7 +245,7 @@ impl DecisionModel {
         }
         let embedded = cur.clone();
 
-        // 2. Transformer 各層
+        // 2. Transformer layers
         let mut layer_caches = Vec::with_capacity(self.config.num_layers);
         for l in &self.offset_layers {
             let mut x1 = vec![0.0f32; n * c];
@@ -278,7 +278,7 @@ impl DecisionModel {
                 nh,
             );
 
-            // 残差接続 1
+            // Residual connection 1
             for i in 0..n * c {
                 cur[i] += attn_out[i];
             }
@@ -309,7 +309,7 @@ impl DecisionModel {
                 ffn,
             );
 
-            // 残差接続 2
+            // Residual connection 2
             for i in 0..n * c {
                 cur[i] += mlp_out[i];
             }
@@ -350,7 +350,7 @@ impl DecisionModel {
             }
         }
 
-        // 5. 決定ヘッド群
+        // 5. Decision heads
         let mut choice_logits = vec![0.0f32; b * num_choices];
         let mut noul_logits = vec![0.0f32; b];
         let mut score_preds = vec![0.0f32; b];
@@ -378,7 +378,7 @@ impl DecisionModel {
             }
             noul_logits[bi] = dot_n;
 
-            // Score Head: 1.0 〜 5.0 にマッピング (3.0 + 2.0 * tanh(dot / 2.0))
+            // Score Head: mapped to [1.0, 5.0] via 3.0 + 2.0 * tanh(dot / 2.0)
             let mut dot_s = 0.0f32;
             for j in 0..c {
                 dot_s += h[j] * w_hs[j];
@@ -398,7 +398,7 @@ impl DecisionModel {
         }
     }
 
-    /// 逆伝播
+    /// Backward pass
     #[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
     pub fn backward(
         &mut self,
@@ -416,7 +416,7 @@ impl DecisionModel {
         let ffn = self.config.ffn_dim;
         let num_choices = self.config.num_choices;
 
-        // 1. ヘッドからの勾配計算 -> d_pooled [B, C]
+        // 1. Compute gradients from decision heads -> d_pooled [B, C]
         let mut d_pooled = vec![0.0f32; b * c];
         let w_hc = &self.params[self.offset_head_choice..self.offset_head_choice + c * num_choices];
         let w_hn = &self.params[self.offset_head_noul..self.offset_head_noul + c];
@@ -426,7 +426,7 @@ impl DecisionModel {
             let h = &cache.pooled[bi * c..(bi + 1) * c];
             let dh = &mut d_pooled[bi * c..(bi + 1) * c];
 
-            // Choice ヘッドの逆伝播
+            // Choice head backward pass
             let d_cl = &dchoice_logits[bi * num_choices..(bi + 1) * num_choices];
             for j in 0..c {
                 let mut sum_dh = 0.0f32;
@@ -437,14 +437,14 @@ impl DecisionModel {
                 dh[j] += sum_dh;
             }
 
-            // Noul ヘッドの逆伝播
+            // Noul head backward pass
             let d_nl = dnoul_logits[bi];
             for j in 0..c {
                 dh[j] += d_nl * w_hn[j];
                 self.grads[self.offset_head_noul + j] += h[j] * d_nl;
             }
 
-            // Score ヘッドの逆伝播: y = 3.0 + 2.0 * tanh(u), u = 0.5 * (h . w_hs)
+            // Score head backward pass: y = 3.0 + 2.0 * tanh(u), u = 0.5 * (h . w_hs)
             // dy/du = 2.0 * (1 - tanh(u)^2)
             // du/d(dot_s) = 0.5
             // dy/d(dot_s) = 1 - tanh(u)^2 = 1 - ((y - 3.0)/2.0)^2
@@ -456,7 +456,7 @@ impl DecisionModel {
             }
         }
 
-        // 2. Mean Pooling の逆伝播 -> d_norm_f_out [N, C]
+        // 2. Mean Pooling backward pass -> d_norm_f_out [N, C]
         let mut d_norm_f_out = vec![0.0f32; n * c];
         let inv_t = 1.0f32 / (t as f32);
         for bi in 0..b {
@@ -469,7 +469,7 @@ impl DecisionModel {
             }
         }
 
-        // 3. Final LN の逆伝播 -> dcur [N, C]
+        // 3. Final LN backward pass -> dcur [N, C]
         let mut dcur = vec![0.0f32; n * c];
         let last_layer_out = if self.config.num_layers > 0 {
             &cache.layer_caches.last().unwrap().out
@@ -489,7 +489,7 @@ impl DecisionModel {
             c,
         );
 
-        // 4. 各層の逆伝播 (逆順)
+        // 4. Layer backward passes in reverse order
         for l_idx in (0..self.config.num_layers).rev() {
             let l = &self.offset_layers[l_idx];
             let prev_layer_out = if l_idx > 0 {
@@ -499,7 +499,7 @@ impl DecisionModel {
             };
             let lc = &cache.layer_caches[l_idx];
 
-            // 残差接続 2 の分岐: d_mlp_out = dcur, dcur_residual = dcur
+            // Residual connection 2 branch: d_mlp_out = dcur, dcur_residual = dcur
             // MLP Backward
             let mut dx2 = vec![0.0f32; n * c];
             let gamma2 = &self.params[l.ln2_gamma..l.ln2_gamma + c];
@@ -524,9 +524,9 @@ impl DecisionModel {
             // LN2 Backward
             let mut d_mid = vec![0.0f32; n * c];
             let dgamma2 = &mut self.grads[l.ln2_gamma..l.ln2_gamma + c];
-            // LN2 Backward: lc.out を用いて正規化前テンソルを近似参照
+            // LN2 Backward: approximate pre-normalization tensor via lc.out
             RMSNorm::backward(
-                &mut d_mid, dgamma2, &dx2, &lc.out, // 近似的にRMSNorm backwardで使用
+                &mut d_mid, dgamma2, &dx2, &lc.out, // approximately used in RMSNorm backward
                 gamma2, &lc.rstd2, n, c,
             );
 
@@ -587,7 +587,7 @@ impl DecisionModel {
             }
         }
 
-        // 5. Embedding の勾配蓄積
+        // 5. Embedding gradient accumulation
         for i in 0..n {
             let tok = tokens[i] as usize % self.config.vocab_size;
             let dcur_row = &dcur[i * c..(i + 1) * c];
@@ -597,7 +597,7 @@ impl DecisionModel {
         }
     }
 
-    /// AdamW 最適化ステップ
+    /// AdamW optimization step
     pub fn adamw_step(
         &mut self,
         lr: f32,
@@ -617,7 +617,7 @@ impl DecisionModel {
             // Weight decay
             self.params[i] -= lr * weight_decay * self.params[i];
 
-            // Adam モーメント更新
+            // Adam moment updates
             self.m[i] = beta1 * self.m[i] + (1.0 - beta1) * g;
             self.v[i] = beta2 * self.v[i] + (1.0 - beta2) * g * g;
 
@@ -627,7 +627,7 @@ impl DecisionModel {
         }
     }
 
-    /// 単一テキストの推論（決定実行）
+    /// Run inference on a single sequence (execute decision)
     pub fn decide(&self, tokens: &[u16]) -> RawDecision {
         let b = 1;
         let t = tokens.len().min(self.config.seq_len);
@@ -636,7 +636,7 @@ impl DecisionModel {
 
         let cache = self.forward(&padded, b, self.config.seq_len);
 
-        // Choice の計算 (温度付き Softmax)
+        // Compute Choice (Softmax with temperature)
         let num_choices = self.config.num_choices;
         let choice_probs =
             LossCalculator::softmax(&cache.choice_logits[..num_choices], self.config.temperature);
@@ -650,14 +650,14 @@ impl DecisionModel {
         }
         let choice_conf = max_p;
 
-        // Noul の計算
+        // Compute Noul
         let noul_p = LossCalculator::sigmoid(cache.noul_logits[0]);
         let noul_val = noul_p >= 0.5;
         let noul_conf = (noul_p - 0.5).abs() * 2.0;
 
-        // Score の計算
+        // Compute Score
         let score_val = cache.score_preds[0].clamp(1.0, 5.0);
-        let score_conf = 1.0 - ((score_val - 3.0).abs() / 2.0) * 0.2; // 安定確信度
+        let score_conf = 1.0 - ((score_val - 3.0).abs() / 2.0) * 0.2; // Stability confidence
 
         RawDecision {
             choice_probs,
@@ -671,7 +671,7 @@ impl DecisionModel {
         }
     }
 
-    /// チェックポイント保存
+    /// Save model checkpoint
     pub fn save_checkpoint(
         &self,
         dir: &Path,
@@ -687,7 +687,7 @@ impl DecisionModel {
         });
         std::fs::write(dir.join("meta.json"), serde_json::to_string_pretty(&meta)?)?;
 
-        // 重みバイナリの保存
+        // Save weights binary
         let mut bytes = Vec::with_capacity(self.params.len() * 4);
         for &p in &self.params {
             bytes.extend_from_slice(&p.to_le_bytes());
@@ -696,7 +696,7 @@ impl DecisionModel {
         Ok(())
     }
 
-    /// チェックポイント読み込み
+    /// Load model checkpoint
     #[allow(clippy::chunks_exact_to_as_chunks)]
     pub fn load_checkpoint(
         &mut self,

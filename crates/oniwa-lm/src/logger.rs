@@ -1,7 +1,7 @@
-//! 完全なライフサイクル・トレーサビリティ（True End-to-End Provenance）
+//! True End-to-End Provenance
 //!
-//! ビルド、データ取得、前処理、学習、推論の「すべて」のイベントを
-//! 改ざん不能な構造化ログ（JSON Lines）として記録し、100%出自の明瞭なモデルを保証します。
+//! Records all lifecycle events (build, ingestion, preprocessing, training, and inference)
+//! as tamper-evident structured logs (JSON Lines), ensuring 100% provenance transparency.
 
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
@@ -9,7 +9,7 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 
 // ==========================================
-// 1. ビルド時ログ (Build Provenance)
+// 1. Build Provenance
 // ==========================================
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BuildLog {
@@ -24,7 +24,7 @@ pub struct BuildLog {
 }
 
 // ==========================================
-// 2. データ取得・前処理ログ (Data Ingestion Provenance)
+// 2. Data Ingestion Provenance
 // ==========================================
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DataIngestionLog {
@@ -41,7 +41,7 @@ pub struct DataIngestionLog {
 }
 
 // ==========================================
-// 3. 学習セッション & ステップログ (Training Provenance)
+// 3. Training Provenance
 // ==========================================
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TrainingManifest {
@@ -79,23 +79,23 @@ pub struct TrainingStepLog {
     pub step: usize,
     pub epoch: usize,
     pub loss: f32,
-    /// 検証損失 (Val Loss, 定期出力)
+    /// Validation loss (periodic evaluation)
     #[serde(default)]
     pub val_loss: Option<f32>,
     pub learning_rate: f32,
     pub grad_norm: f32,
     pub elapsed_ms: u128,
-    /// CPU実温度 (℃)
+    /// CPU actual temperature (Celsius)
     pub cpu_temp_c: Option<f32>,
-    /// サーマルスロットリングで挿入された冷却時間 (ms)
+    /// Cooling sleep duration inserted by thermal throttling (ms)
     pub throttle_sleep_ms: u64,
-    /// 推定瞬間消費電力 (W)
+    /// Estimated instantaneous power consumption (W)
     pub estimated_power_w: f32,
-    /// 累積消費エネルギー (Wh)
+    /// Cumulative energy consumed (Wh)
     pub accumulated_energy_wh: f32,
-    /// 重みのチェックサム (定期出力)
+    /// Parameter checksum (periodic output)
     pub param_checksum: Option<String>,
-    /// 多軸評価ベンチマーク (定期出力)
+    /// Multi-axial benchmark metrics (periodic output)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub benchmark: Option<BenchmarkLog>,
 }
@@ -119,7 +119,7 @@ pub struct BenchmarkLog {
 }
 
 // ==========================================
-// 4. 推論ログ (Inference Provenance)
+// 4. Inference Provenance
 // ==========================================
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InferenceLog {
@@ -135,7 +135,7 @@ pub struct InferenceLog {
 }
 
 // ==========================================
-// 全イベント統合用 Ledger (系譜台帳)
+// Provenance Ledger
 // ==========================================
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "event_type", content = "payload")]
@@ -147,7 +147,7 @@ pub enum ProvenanceEvent {
     Inference(InferenceLog),
 }
 
-/// 全ライフサイクルを1つの追記専用ファイルに書き込むストリーミングロガー
+/// Streaming logger appending all lifecycle events to a single append-only ledger file.
 pub struct ProvenanceLedger {
     writer: BufWriter<File>,
 }
@@ -164,7 +164,7 @@ impl ProvenanceLedger {
         })
     }
 
-    /// 任意のライフサイクルイベントを即時フラッシュ書き込み
+    /// Record an arbitrary lifecycle event with immediate flush.
     pub fn record(&mut self, event: &ProvenanceEvent) -> std::io::Result<()> {
         let json = serde_json::to_string(event)?;
         writeln!(self.writer, "{}", json)?;
@@ -172,7 +172,7 @@ impl ProvenanceLedger {
     }
 }
 
-/// 現在時刻を ISO 8601 (UTC, 例: "2026-09-15T13:45:30Z") 形式で生成
+/// Generate current UTC timestamp in ISO 8601 format (e.g., "2026-09-15T13:45:30Z").
 pub fn current_timestamp_utc() -> String {
     let now = std::time::SystemTime::now();
     let duration = now
@@ -227,15 +227,15 @@ pub fn current_timestamp_utc() -> String {
     )
 }
 
-/// ビルド時または実行時フォールバックによる Git コミットハッシュの取得 (完全40桁)
+/// Get Git commit hash (full 40 characters) via build-time env var or runtime fallback.
 pub fn get_git_commit_hash() -> String {
-    // 1. build.rs によるコンパイル時環境変数を優先
+    // 1. Prefer compile-time env var from build.rs
     if let Some(h) = option_env!("ONIWA_GIT_HASH") {
         if h != "unknown" && !h.is_empty() {
             return h.to_string();
         }
     }
-    // 2. 実行時コマンドフォールバック
+    // 2. Runtime git command fallback
     std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
         .output()
@@ -252,7 +252,7 @@ pub fn get_git_commit_hash() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// 短縮 Git コミットハッシュ (7桁)
+/// Shortened Git commit hash (7 characters).
 pub fn get_git_short_hash() -> String {
     let full = get_git_commit_hash();
     if full.len() >= 7 {
@@ -262,7 +262,7 @@ pub fn get_git_short_hash() -> String {
     }
 }
 
-/// Git 作業ツリーの変更有無 (dirty) の判定
+/// Check if the Git working tree has uncommitted modifications (dirty).
 pub fn get_git_dirty() -> bool {
     if let Some(d) = option_env!("ONIWA_GIT_DIRTY") {
         if d == "true" {
@@ -291,7 +291,7 @@ mod tests {
 
         let mut ledger = ProvenanceLedger::open(&ledger_path).unwrap();
 
-        // 1. ビルドイベント記録
+        // 1. Record build event
         ledger
             .record(&ProvenanceEvent::Build(BuildLog {
                 timestamp_utc: "2026-09-14T09:00:00Z".into(),
@@ -305,7 +305,7 @@ mod tests {
             }))
             .unwrap();
 
-        // 2. データ取得イベント記録
+        // 2. Record data ingestion event
         ledger
             .record(&ProvenanceEvent::DataIngestion(DataIngestionLog {
                 timestamp_utc: "2026-09-14T09:10:00Z".into(),
@@ -322,7 +322,7 @@ mod tests {
             }))
             .unwrap();
 
-        // 3. 学習ステップ記録 (熱温度付き)
+        // 3. Record training step (with temperature)
         ledger
             .record(&ProvenanceEvent::TrainingStep(TrainingStepLog {
                 step: 100,
@@ -341,7 +341,7 @@ mod tests {
             }))
             .unwrap();
 
-        // 4. 推論イベント記録
+        // 4. Record inference event
         ledger
             .record(&ProvenanceEvent::Inference(InferenceLog {
                 timestamp_utc: "2026-09-14T10:00:00Z".into(),
@@ -356,7 +356,7 @@ mod tests {
             }))
             .unwrap();
 
-        // 検証
+        // Verify
         let file = File::open(&ledger_path).unwrap();
         let reader = BufReader::new(file);
         let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
@@ -368,7 +368,7 @@ mod tests {
         assert!(lines[2].contains("\"throttle_sleep_ms\":25"));
         assert!(lines[3].contains("\"event_type\":\"Inference\""));
 
-        // クリーンアップ
+        // Cleanup
         let _ = std::fs::remove_file(ledger_path);
     }
 }

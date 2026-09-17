@@ -1,88 +1,84 @@
-# Phase 3: 他PC（16GB RAM）向け 開発・実行引き継ぎガイド
+# Phase 3: Development & Execution Handover Guide (16GB RAM)
 
-本ドキュメントは、別マシン（RAM 16GB環境）で `niwa-lm` の実装・テスト・学習を引き継いで実行するための完全ガイドです。
-
----
-
-## 1. 前提環境と推奨スペック
-
-* **対象マシン**: RAM 16GB 搭載の PC (Linux / macOS / WSL2)
-* **Rust バージョン**: 1.75 以上（`rustup update` 推奨）
-* **外部依存**: **ゼロ**（Python、PyTorch、CUDAドライバ不要。`cargo` だけで完結します）
+This document provides a comprehensive guide for continuing implementation, testing, and training of `oniwa-lm` on another machine (e.g., 16GB RAM environment).
 
 ---
 
-## 2. 引き継ぎ後のクイックスタート（コマンド手順）
+## 1. Prerequisites & Recommended Specs
 
-別PCでリポジトリをクローンまたは pull した後、以下の手順で進めます。
+* **Target Hardware**: PC / Laptop with 16GB RAM (Linux / macOS / WSL2)
+* **Rust Toolchain**: 1.75 or later (`rustup update` recommended)
+* **External Dependencies**: **Zero** (no Python, PyTorch, or CUDA drivers required; builds and runs entirely with `cargo`)
+
+---
+
+## 2. Quick Start Commands
+
+After cloning or pulling the repository on the target machine:
 
 ```bash
-# 1. oniwa-lm ディレクトリへ移動
+# 1. Navigate to oniwa-lm crate
 cd crates/oniwa-lm
 
-# 2. 全単体テスト（数値微分勾配チェック・乱数再現性）の実行
+# 2. Run all unit tests (gradient checks, thermal/power checks, reproducibility)
 cargo test -- --nocapture
 
-# 3. リセットしてシード0からサクッと動作確認 (150ステップ)
+# 3. Quick training test (reset checkpoints, run 150 steps)
 cargo run --release --bin train -- --reset
 
-# 4. 対話チャットで動作確認
+# 4. Interactive chat inference test
 cargo run --release --bin chat
 ```
 
 ---
 
-## 3. 16GB RAM でのモデル規模・ハイパーパラメータ設定指針
+## 3. Recommended Hyperparameters for 16GB RAM
 
-16GB RAM マシンで「スワップゼロ・快適なオンメモリ学習」を実現するための設定値です。
+Configuration values designed for zero-swapping, comfortable in-memory execution:
 
 ```rust
 pub struct Config {
-    pub vocab_size: usize,   // 8,192 (青空文庫/日本語BPEに最適)
-    pub seq_len: usize,      // 512 トークン
-    pub dim: usize,          // 512 (隠れ層次元)
-    pub num_layers: usize,   // 8 レイヤー
-    pub num_heads: usize,    // 8 (Query ヘッド数)
-    pub num_kv_heads: usize, // 2 (KV ヘッド数, GQA G=4)
-    pub ffn_dim: usize,      // 1,365 (SwiGLU 黄金比: 512 * 8/3)
+    pub vocab_size: usize,   // e.g. 8,192
+    pub seq_len: usize,      // 512 tokens
+    pub dim: usize,          // 512 (hidden dimension)
+    pub num_layers: usize,   // 8 layers
+    pub num_heads: usize,    // 8 (Query heads)
+    pub num_kv_heads: usize, // 2 (KV heads, GQA G=4)
+    pub ffn_dim: usize,      // 1,365 (SwiGLU golden ratio: 512 * 8/3)
 }
 ```
 
-### メモリ配分表（所要メモリ合計：約 910 MB）
-* **パラメータ重み**: 約 140 MB (`f32`)
-* **勾配バッファ**: 約 140 MB (`f32`)
-* **AdamW 状態バッファ**: 約 280 MB (`m` と `v` で重みの2倍)
-* **中間活性化値 (B=4, T=512)**: 約 350 MB
-* **OS / バックグラウンド余力**: **15 GB 以上の空き**（他作業と並行しても極めて安全）
+### Memory Footprint Breakdown (Total: ~910 MB)
+* **Parameter weights**: ~140 MB (`f32`)
+* **Gradient buffer**: ~140 MB (`f32`)
+* **AdamW state buffer**: ~280 MB ($2 \times \text{Params}$ for $m$ and $v$)
+* **Intermediate activations (B=4, T=512)**: ~350 MB
+* **OS / Background Headroom**: **> 15 GB free** (safe to run concurrently with other desktop workloads)
 
 ---
 
-## 4. 引き継ぎ後の開発タスク（実装順ロードマップ）
+## 4. Development Workflow & Implementation Tasks
 
-別PCで開発を再開する際は、以下の順番で `src/layers/` を埋めていきます。
+When extending functionality within `src/layers/`:
 
-### Step 1: 残りの Modern Primitives の実装
-1. **`src/layers/rope.rs`**:
-   - `02_modern_primitives.md` の第2節を参照。
-   - 順伝播回転と、逆回転（符号反転）による逆伝播。
-2. **`src/layers/swiglu.rs`**:
-   - `02_modern_primitives.md` の第3節を参照。
-   - $\text{Swish}'(u)$ を用いた逆伝播。
-3. **`src/layers/matmul.rs`**:
-   - `matrixmultiply::sgemm` を用いた CPU 行列積の順伝播・逆伝播。
-   - $C = A B \implies dA = dC B^T, \quad dB = A^T dC$
+### Step 1: Modern Primitives
+1. **`src/layers/rope.rs` & `attention.rs`**:
+   - Reference `02_modern_primitives.md` Section 2.
+   - Forward rotation and backward reverse rotation (sign inversion).
+2. **`src/layers/mlp.rs` (SwiGLU)**:
+   - Reference `02_modern_primitives.md` Section 3.
+   - Backward pass using $\text{Swish}'(u)$.
+3. **`src/layers/rmsnorm.rs`**:
+   - Reference `02_modern_primitives.md` Section 1.
 
-### Step 2: フラットアリーナバッファの実装 (`src/buffer.rs`)
-- `03_rust_memory_model.md` に基づき、単一の `Vec<f32>` から `split_at_mut` で各レイヤーのスライスを切り出す安全な構造体を定義。
-
-### Step 3: 学習ループ・オプティマイザの結合 (`src/model.rs`, `src/optim.rs`)
-- `01_llm_c_architecture.md` に基づき、全レイヤーを逆順に呼び出す手動 `backward` と、1次元ループの `AdamW` を結合。
+### Step 2: Training Loop & Optimizer Integration
+- Reference `01_llm_c_architecture.md` and `model.rs` to maintain manual backward traversal and flat-array AdamW optimization.
 
 ---
 
-## 5. ドキュメント相互参照マップ
+## 5. Document Cross-Reference Map
 
-* **構造分解の基礎**: [01_llm_c_architecture.md](01_llm_c_architecture.md)
-* **数式と導出**: [02_modern_primitives.md](02_modern_primitives.md)
-* **メモリ・ライフタイム設計**: [03_rust_memory_model.md](03_rust_memory_model.md)
-* **先行実装コード**: [`crates/oniwa-lm/src/layers/rmsnorm.rs`](../crates/oniwa-lm/src/layers/rmsnorm.rs) （※数値微分テスト付き）
+* **Architectural Decomposition**: [01_llm_c_architecture.md](01_llm_c_architecture.md)
+* **Mathematical Formulations**: [02_modern_primitives.md](02_modern_primitives.md)
+* **Memory & Lifecycle Design**: [03_rust_memory_model.md](03_rust_memory_model.md)
+* **Layer Implementation Reference**: [`crates/oniwa-lm/src/layers/rmsnorm.rs`](../crates/oniwa-lm/src/layers/rmsnorm.rs)

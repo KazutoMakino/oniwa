@@ -1,10 +1,9 @@
-//! 多軸評価ベンチマークシステム (Multi-Axis Evaluation Benchmark)
+//! Multi-Axis Evaluation Benchmark System
 //!
-//! 単一のValidation Loss（クロスエントロピー）だけでなく、
-//! 以下の3つの観点からモデルの言語能力を定量的・定性的に測定します:
-//! 1. Next-Token Top-k 精度 (Top-5 Accuracy)
-//! 2. 定番穴埋めクイズ (Cloze Test Suite - 10問)
-//! 3. 構文健全性スコア (括弧の対整合率 & 反復ループ抑制率)
+//! Quantitatively and qualitatively measures linguistic capabilities beyond cross-entropy validation loss:
+//! 1. Next-Token Top-k accuracy (Top-5 Accuracy)
+//! 2. Cloze Test Suite (Literature and code questions)
+//! 3. Syntactic validity scores (bracket balance rate & repetition suppression rate)
 
 use crate::model::ModelWeights;
 use crate::reproducibility::DeterministicRng;
@@ -12,7 +11,7 @@ use crate::tokenizer::CharTokenizer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-/// 穴埋めクイズの問題定義
+/// Definition of a cloze test question
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClozeQuestion {
     pub category: String,
@@ -21,7 +20,7 @@ pub struct ClozeQuestion {
     pub description: String,
 }
 
-/// 穴埋めクイズの個別回答結果
+/// Individual evaluation result for a cloze test question
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClozeDetail {
     pub prompt: String,
@@ -33,42 +32,42 @@ pub struct ClozeDetail {
     pub target_prob: f32,
 }
 
-/// 多軸評価ベンチマークの総合結果
+/// Comprehensive results of the multi-axis benchmark
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkResult {
-    /// Validation データセット上の Top-5 Next-Token 予測正解率 (%)
+    /// Top-5 next-token prediction accuracy on validation dataset (%)
     pub top5_accuracy: f32,
-    /// 穴埋めクイズの Top-1 総合正答率 (%)
+    /// Top-1 overall accuracy across cloze tests (%)
     pub cloze_top1_accuracy: f32,
-    /// 穴埋めクイズの Top-5 総合正答率 (%)
+    /// Top-5 overall accuracy across cloze tests (%)
     pub cloze_top5_accuracy: f32,
-    /// 構文健全性スコア (%) (括弧整合率 + 反復ループ抑制率)
+    /// Syntactic validity score (%) (bracket matching rate + repetition suppression rate)
     pub syntactic_score: f32,
-    /// 括弧の対・閉じ整合率 (%) (全括弧)
+    /// Bracket pair matching rate (%) (all brackets)
     pub bracket_score: f32,
-    /// 反復ループ抑制率 (%)
+    /// Repetition suppression rate (%)
     pub non_repetition_score: f32,
-    /// 文学穴埋めクイズ正答率 (%)
+    /// Literature cloze accuracy (%)
     #[serde(default)]
     pub lit_cloze_score: f32,
-    /// コード穴埋めクイズ正答率 (%)
+    /// Code cloze accuracy (%)
     #[serde(default)]
     pub code_cloze_score: f32,
-    /// コード括弧（{} () []）整合率 (%)
+    /// Code bracket matching rate (%) ({} () [])
     #[serde(default)]
     pub code_bracket_score: f32,
-    /// インデント（4/2スペース）整合率 (%)
+    /// Indentation matching rate (%) (4/2 spaces)
     #[serde(default)]
     pub indent_score: f32,
-    /// 穴埋めクイズの詳細結果リスト
+    /// List of detailed cloze test results
     pub cloze_details: Vec<ClozeDetail>,
 }
 
 impl BenchmarkResult {
-    /// コンソール表示用の要約文字列
+    /// Summary string for console display
     pub fn summary_line(&self) -> String {
         format!(
-            "Top-5: {:.1}% | クイズ: {:.1}% (文学: {:.1}%, コード: {:.1}%) | 構文: {:.1}% (括弧: {:.1}%, コード括弧: {:.1}%, インデント: {:.1}%)",
+            "Top-5: {:.1}% | Quiz: {:.1}% (Lit: {:.1}%, Code: {:.1}%) | Syntax: {:.1}% (Bracket: {:.1}%, CodeBracket: {:.1}%, Indent: {:.1}%)",
             self.top5_accuracy,
             self.cloze_top1_accuracy,
             self.lit_cloze_score,
@@ -80,10 +79,10 @@ impl BenchmarkResult {
         )
     }
 
-    /// Markdown テーブル列用の短縮表示 (Top-5 / 文学 / コード / 構文)
+    /// Short display for Markdown table columns (Top-5 / Lit / Code / Syntax)
     pub fn short_display(&self) -> String {
         format!(
-            "{:.1}% / 文学:{:.1}% / コード:{:.1}% / 構文:{:.1}%",
+            "{:.1}% / Lit:{:.1}% / Code:{:.1}% / Syntax:{:.1}%",
             self.top5_accuracy, self.lit_cloze_score, self.code_cloze_score, self.syntactic_score
         )
     }
@@ -106,146 +105,146 @@ impl From<&BenchmarkResult> for crate::logger::BenchmarkLog {
     }
 }
 
-/// 定番穴埋めクイズ 10問のデフォルト定義
+/// Default 10 classic literature cloze questions
 pub fn default_cloze_questions() -> Vec<ClozeQuestion> {
     vec![
         ClozeQuestion {
-            category: "名作文学".into(),
+            category: "Classic Literature".into(),
             prompt: "吾輩は猫で".into(),
             target: 'あ',
-            description: "夏目漱石『吾輩は猫である』".into(),
+            description: "Natsume Soseki 'I Am a Cat'".into(),
         },
         ClozeQuestion {
-            category: "名作文学".into(),
+            category: "Classic Literature".into(),
             prompt: "国境の長いトンネルを抜けると".into(),
             target: '雪',
-            description: "川端康成『雪国』".into(),
+            description: "Yasunari Kawabata 'Snow Country'".into(),
         },
         ClozeQuestion {
-            category: "名作文学".into(),
+            category: "Classic Literature".into(),
             prompt: "メロスは激怒".into(),
             target: 'し',
-            description: "太宰治『走れメロス』".into(),
+            description: "Osamu Dazai 'Run, Melos!'".into(),
         },
         ClozeQuestion {
-            category: "古典文学".into(),
+            category: "Classical Japanese".into(),
             prompt: "祇園精舎の鐘の".into(),
             target: '声',
-            description: "『平家物語』".into(),
+            description: "'The Tale of the Heike'".into(),
         },
         ClozeQuestion {
-            category: "古典文学".into(),
+            category: "Classical Japanese".into(),
             prompt: "色は匂へど".into(),
             target: '散',
-            description: "『いろは歌』".into(),
+            description: "'Iroha poem'".into(),
         },
         ClozeQuestion {
-            category: "近代思想".into(),
+            category: "Modern Thought".into(),
             prompt: "天は人の上に人を造らず人の".into(),
             target: '下',
-            description: "福沢諭吉『学問のすすめ』".into(),
+            description: "Yukichi Fukuzawa 'An Encouragement of Learning'".into(),
         },
         ClozeQuestion {
-            category: "古典文学".into(),
+            category: "Classical Japanese".into(),
             prompt: "春は".into(),
             target: 'あ',
-            description: "清少納言『枕草子』".into(),
+            description: "Sei Shonagon 'The Pillow Book'".into(),
         },
         ClozeQuestion {
-            category: "ことわざ".into(),
+            category: "Proverb".into(),
             prompt: "犬も歩けば".into(),
             target: '棒',
-            description: "「犬も歩けば棒に当たる」".into(),
+            description: "Proverb: 'A dog walking will hit a stick'".into(),
         },
         ClozeQuestion {
-            category: "ことわざ".into(),
+            category: "Proverb".into(),
             prompt: "猿も木から".into(),
             target: '落',
-            description: "「猿も木から落ちる」".into(),
+            description: "Proverb: 'Even monkeys fall from trees'".into(),
         },
         ClozeQuestion {
-            category: "格言".into(),
+            category: "Maxim".into(),
             prompt: "時は".into(),
             target: '金',
-            description: "「時は金なり」".into(),
+            description: "Maxim: 'Time is money'".into(),
         },
     ]
 }
 
-/// コード構文・アルゴリズム穴埋めクイズ 10問（Python & Rust）
+/// 10 code syntax and algorithm cloze questions (Python & Rust)
 pub fn code_cloze_questions() -> Vec<ClozeQuestion> {
     vec![
         ClozeQuestion {
-            category: "Python構文".into(),
+            category: "Python Syntax".into(),
             prompt: "def fibonacci(n):\n    if n <= 1:\n        return ".into(),
             target: 'n',
-            description: "基底条件の返却値 return n".into(),
+            description: "Base condition return value: return n".into(),
         },
         ClozeQuestion {
-            category: "Python構文".into(),
+            category: "Python Syntax".into(),
             prompt: "for i in range(".into(),
             target: '1',
-            description: "range数値リテラル".into(),
+            description: "range numeric argument".into(),
         },
         ClozeQuestion {
-            category: "Pythonアルゴリズム".into(),
+            category: "Python Algorithm".into(),
             prompt: "while low <= high:\n    mid = (low + high) // ".into(),
             target: '2',
-            description: "二分探索の中央値計算 // 2".into(),
+            description: "Binary search midpoint calculation // 2".into(),
         },
         ClozeQuestion {
-            category: "Python構造".into(),
+            category: "Python Data Structures".into(),
             prompt: "class Stack:\n    def __init__(self):\n        self.items = ".into(),
             target: '[',
-            description: "リスト初期化 [ ]".into(),
+            description: "List initialization [ ]".into(),
         },
         ClozeQuestion {
-            category: "Rust構文".into(),
+            category: "Rust Syntax".into(),
             prompt: "fn main() {\n    println".into(),
             target: '!',
-            description: "Rustマクロ呼び出し println!".into(),
+            description: "Rust macro call println!".into(),
         },
         ClozeQuestion {
-            category: "Rust構文".into(),
+            category: "Rust Syntax".into(),
             prompt: "pub fn is_prime(n: ".into(),
             target: 'u',
-            description: "符号なし整数型 u32/u64".into(),
+            description: "Unsigned integer type u32/u64".into(),
         },
         ClozeQuestion {
-            category: "Rust構文".into(),
+            category: "Rust Syntax".into(),
             prompt: "let mut stack = Stack::".into(),
             target: 'n',
-            description: "コンストラクタ呼び出し ::new()".into(),
+            description: "Constructor invocation ::new()".into(),
         },
         ClozeQuestion {
-            category: "Rustクレート".into(),
+            category: "Rust Crates".into(),
             prompt: "use serde::{Serialize, ".into(),
             target: 'D',
-            description: "Serde Deserialize トレイト".into(),
+            description: "Serde Deserialize trait".into(),
         },
         ClozeQuestion {
-            category: "Rustクレート".into(),
+            category: "Rust Crates".into(),
             prompt: "let re = Regex::".into(),
             target: 'n',
-            description: "Regex::new() コンパイル".into(),
+            description: "Regex::new() compilation".into(),
         },
         ClozeQuestion {
-            category: "Python標準".into(),
+            category: "Python Standard Library".into(),
             prompt: "import json\ndata = json.".into(),
             target: 'l',
-            description: "json.loads() / json.load() 呼び出し".into(),
+            description: "json.loads() / json.load() call".into(),
         },
     ]
 }
 
-/// 全穴埋めクイズ（文学10問＋コード10問）
+/// Combined cloze question suite (10 literature + 10 code)
 pub fn all_cloze_questions() -> Vec<ClozeQuestion> {
     let mut questions = default_cloze_questions();
     questions.extend(code_cloze_questions());
     questions
 }
 
-/// 穴埋めクイズスイートの評価
+/// Evaluate cloze test suite
 pub fn evaluate_cloze_suite(
     model: &ModelWeights,
     tokenizer: &CharTokenizer,
@@ -264,12 +263,12 @@ pub fn evaluate_cloze_suite(
         }
         let target_id = target_id_opt.unwrap() as usize;
 
-        // コンテキスト長を seq_len 以内に制限
+        // Truncate context to seq_len
         let context_start = tokens.len().saturating_sub(model.config.seq_len);
         let context = &tokens[context_start..];
         let logits = model.forward_inference(context);
 
-        // 予測 Top-1 (argmax)
+        // Predicted Top-1 (argmax)
         let mut max_logit = f32::NEG_INFINITY;
         let mut argmax_id = 0;
         for (i, &l) in logits.iter().enumerate() {
@@ -280,7 +279,7 @@ pub fn evaluate_cloze_suite(
         }
         let predicted_char = tokenizer.id_to_char.get(argmax_id).copied().unwrap_or('?');
 
-        // 正解トークンの順位 (Rank) と確率の算出
+        // Calculate target token rank and probability
         let target_logit = logits.get(target_id).copied().unwrap_or(f32::NEG_INFINITY);
         let mut rank = 0;
         let mut sum_exp = 0.0f32;
@@ -323,8 +322,8 @@ pub fn evaluate_cloze_suite(
     (top1_acc, top5_acc, details)
 }
 
-/// 単一テキストの括弧整合性スコア (0.0 〜 100.0%)
-/// 文学括弧（「」『』（）等）およびコード括弧（{} () []）を両方評価
+/// Bracket balance score for a single text (0.0 to 100.0%)
+/// Evaluates both Japanese literary brackets (「」『』（） etc.) and code brackets ({} () [])
 pub fn compute_bracket_score(text: &str) -> f32 {
     let mut stack = Vec::new();
     let mut matched_pairs = 0usize;
@@ -398,13 +397,13 @@ pub fn compute_bracket_score(text: &str) -> f32 {
 
     let total_bracket_events = matched_pairs * 2 + unmatched_open + unexpected_close;
     if total_bracket_events == 0 {
-        100.0 // 括弧が使われていなければ文法違反なし (100点)
+        100.0 // No brackets used means no syntax violation (100%)
     } else {
         ((matched_pairs * 2) as f32 / total_bracket_events as f32) * 100.0
     }
 }
 
-/// コード専用括弧（{} () []）の整合性スコア (0.0 〜 100.0%)
+/// Code-specific bracket balance score (0.0 to 100.0%) ({} () [])
 pub fn compute_code_bracket_score(text: &str) -> f32 {
     let mut stack = Vec::new();
     let mut matched_pairs = 0usize;
@@ -448,7 +447,7 @@ pub fn compute_code_bracket_score(text: &str) -> f32 {
     }
 }
 
-/// 4スペース/2スペースインデント整合率 (0.0 〜 100.0%)
+/// Indentation balance rate for 4-space / 2-space indentation (0.0 to 100.0%)
 pub fn compute_indent_score(text: &str) -> f32 {
     let mut total_indented_lines = 0usize;
     let mut valid_indented_lines = 0usize;
@@ -458,7 +457,7 @@ pub fn compute_indent_score(text: &str) -> f32 {
         let num_leading_spaces = line.len() - trimmed_start.len();
         if num_leading_spaces > 0 {
             total_indented_lines += 1;
-            // 2または4の倍数（Python/Rust標準インデント規則）であれば正しい
+            // Valid if multiple of 2 or 4 (standard Python/Rust indentation conventions)
             if num_leading_spaces % 2 == 0 {
                 valid_indented_lines += 1;
             }
@@ -472,14 +471,14 @@ pub fn compute_indent_score(text: &str) -> f32 {
     }
 }
 
-/// 単一テキストの反復ループ抑制率 (0.0 〜 100.0%)
+/// Repetition loop suppression rate for a single text (0.0 to 100.0%)
 pub fn compute_non_repetition_score(text: &str) -> f32 {
     let chars: Vec<char> = text.chars().collect();
     if chars.len() < 4 {
         return 100.0;
     }
 
-    // 2-gram のユニーク比率
+    // Unique ratio of 2-grams
     let total_bigrams = chars.len() - 1;
     let mut bigrams = HashSet::new();
     for window in chars.windows(2) {
@@ -487,7 +486,7 @@ pub fn compute_non_repetition_score(text: &str) -> f32 {
     }
     let unique_ratio_2 = bigrams.len() as f32 / total_bigrams as f32;
 
-    // 3-gram のユニーク比率
+    // Unique ratio of 3-grams
     let total_trigrams = chars.len() - 2;
     let mut trigrams = HashSet::new();
     for window in chars.windows(3) {
@@ -498,8 +497,8 @@ pub fn compute_non_repetition_score(text: &str) -> f32 {
     ((unique_ratio_2 + unique_ratio_3) / 2.0 * 100.0).clamp(0.0, 100.0)
 }
 
-/// 生成テキスト群の構文健全性総合評価
-/// (総合構文スコア, 全括弧スコア, ループ抑制スコア, コード括弧スコア, インデントスコア)
+/// Comprehensive syntactic validity evaluation for generated texts
+/// (overall_syntax_score, all_bracket_score, loop_suppression_score, code_bracket_score, indent_score)
 pub fn evaluate_syntactic_health(texts: &[String]) -> (f32, f32, f32, f32, f32) {
     if texts.is_empty() {
         return (100.0, 100.0, 100.0, 100.0, 100.0);
@@ -533,7 +532,7 @@ pub fn evaluate_syntactic_health(texts: &[String]) -> (f32, f32, f32, f32, f32) 
     )
 }
 
-/// 多軸評価ベンチマークの総合実行（二刀流: 文学＋コード対応）
+/// Comprehensive multi-axis benchmark execution (literature + code)
 pub fn run_benchmark(
     model: &ModelWeights,
     tokenizer: &CharTokenizer,
@@ -543,7 +542,7 @@ pub fn run_benchmark(
     num_eval_batches: usize,
     rng: &mut DeterministicRng,
 ) -> (f32, BenchmarkResult) {
-    // 1. Validation Split 上での Loss と Top-5 精度
+    // 1. Loss and Top-5 accuracy on validation split
     let (val_loss, top5_accuracy) = evaluate_validation_metrics(
         model,
         val_tokens,
@@ -554,7 +553,7 @@ pub fn run_benchmark(
         rng,
     );
 
-    // 2. 穴埋めクイズ（文学10問 ＆ コード10問）
+    // 2. Cloze test evaluation (10 literature & 10 code questions)
     let lit_questions = default_cloze_questions();
     let code_questions = code_cloze_questions();
 
@@ -567,7 +566,7 @@ pub fn run_benchmark(
     let (cloze_top1_accuracy, cloze_top5_accuracy, cloze_details) =
         evaluate_cloze_suite(model, tokenizer, &all_questions);
 
-    // 3. 構文健全性（全括弧、コード括弧、インデント、反復抑制）
+    // 3. Syntactic validity (all brackets, code brackets, indentation, repetition suppression)
     let (syntactic_score, bracket_score, non_repetition_score, code_bracket_score, indent_score) =
         evaluate_syntactic_health(generated_samples);
 
@@ -588,7 +587,7 @@ pub fn run_benchmark(
     (val_loss, result)
 }
 
-/// 検証用データセットからミニバッチをサンプリングして Val Loss と Top-k 精度を算出
+/// Sample minibatches from validation dataset to compute validation loss and Top-k accuracy
 pub fn evaluate_validation_metrics(
     model: &ModelWeights,
     val_tokens: &[u16],
@@ -629,34 +628,34 @@ mod tests {
 
     #[test]
     fn test_bracket_scoring() {
-        // 括弧なし -> 100%
+        // No brackets -> 100%
         assert_eq!(
             compute_bracket_score("吾輩は猫である。名前はまだ無い。"),
             100.0
         );
 
-        // 正しい対の括弧 -> 100%
+        // Correctly paired brackets -> 100%
         assert_eq!(compute_bracket_score("メロスは「走れ！」と言った。"), 100.0);
         assert_eq!(compute_bracket_score("『草枕』（夏目漱石）"), 100.0);
 
-        // 閉じ忘れ -> 減点
+        // Unclosed bracket -> penalty
         let unclosed = compute_bracket_score("メロスは「走れ！と言った。");
         assert!(unclosed < 100.0);
 
-        // 順序違い・不意の閉じ括弧 -> 減点
+        // Mismatched order / unexpected closing bracket -> penalty
         let mismatch = compute_bracket_score("メロスは」走れ！「と言った。");
         assert!(mismatch < 100.0);
     }
 
     #[test]
     fn test_non_repetition_scoring() {
-        // 正常な文
+        // Normal text
         let normal = compute_non_repetition_score(
             "吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。",
         );
         assert!(normal > 80.0);
 
-        // 縮退した反復ループ
+        // Degenerate repetition loop
         let degenerate = compute_non_repetition_score(
             "ああああああああああああああああああああああああああああああ",
         );
@@ -690,24 +689,24 @@ mod tests {
 
     #[test]
     fn test_code_bracket_and_indent_scoring() {
-        // 正しいコード括弧
+        // Valid code brackets
         assert_eq!(
             compute_code_bracket_score("fn main() { let arr = [1, 2, 3]; }"),
             100.0
         );
-        // 不正なコード括弧
+        // Invalid code brackets
         assert!(compute_code_bracket_score("fn main() { let arr = [1, 2, 3; }") < 100.0);
 
-        // 正しい4スペースインデント
+        // Valid 4-space indentation
         let clean_py =
             "def foo():\n    x = 1\n    if x > 0:\n        return True\n    return False\n";
         assert_eq!(compute_indent_score(clean_py), 100.0);
 
-        // 奇数スペースの不正インデント
+        // Odd-spaced invalid indentation
         let bad_py = "def foo():\n   x = 1\n";
         assert!(compute_indent_score(bad_py) < 100.0);
 
-        // コードクイズが10問定義されていること
+        // Verify 10 code questions are defined
         assert_eq!(code_cloze_questions().len(), 10);
         assert_eq!(all_cloze_questions().len(), 20);
     }

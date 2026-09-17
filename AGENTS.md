@@ -1,81 +1,86 @@
-# 🌿 ONIWA 開発ガイドライン (Agent Protocol)
+# 🌿 ONIWA Development Guidelines (Agent Protocol)
 
-本ドキュメントは、本リポジトリ（`oniwa`）で作業を行うすべての AI エージェント（Antigravity、Gemini、Claude 等）および開発者が遵守すべき**行動規範・開発プロトコル**を定義します。
+This document defines the **code of conduct and development protocol** to be strictly observed by all AI agents (Antigravity, Gemini, Claude, etc.) and developers working in this repository (`oniwa`).
 
-新規セッション開始時や別チャットでの作業時も、**必ず本プロトコルに従って自律的に作業を進めてください。**
-
----
-
-## 1. コア設計思想（Core Philosophy）
-
-- **脱データセンター・無断搾取なきオーガニック知性 (ONIWA)**:
-  巨大GPUクラスタや無断スクレイピングデータに頼らず、クリーンなオープンデータと省電力エッジデバイス（Raspberry Pi 4等）で育成する小さな知性を目指す。
-- **ピュア Rust 原則 (Pure Rust)**:
-  Python、PyTorch、TensorFlow、CUDA などの外部 ML フレームワークへの依存は**一切禁止**。Transformer のすべての順伝播・逆伝播・オプティマイザ・熱制御・電力トラッキングをピュア Rust で完結させる。
-- **出自の完全な透明性 (Provenance & Auditability)**:
-  学習データ・ビルド・コミットハッシュ・重み SHA-256 チェックサムを監査台帳（`logs/ledger_index.jsonl`）に記録し、ブラックボックスを排除する。
+When starting a new session or working in a separate chat context, **always adhere to this protocol autonomously.**
 
 ---
 
-## 2. 厳格な Issue ドリブン開発ワークフロー
+## 1. Core Philosophy
 
-すべての機能追加、バグ修正、リファクタリング、ドキュメント更新は、以下の **6段階のライフサイクル** を厳格に遵守して実行してください。
+- **Organic Non-datacenter Intelligence Without Abuse (ONIWA)**:
+  Cultivate small, autonomous intelligence using 100% provenance-audited clean open data on low-power edge hardware (such as Raspberry Pi 4), rejecting the power games of GPU clusters and non-consensual web scraping.
+- **Pure Rust Principle**:
+  Dependencies on external ML frameworks (Python, PyTorch, TensorFlow, CUDA, etc.) are **strictly prohibited**. All Transformer forward/backward passes, optimizers, thermal control, and power tracking must be implemented in Pure Rust.
+- **100% Provenance & Auditability**:
+  Record training data, build environments, commit hashes, and model weight SHA-256 checksums in the audit ledger (`logs/ledger_index.jsonl`) to completely eliminate black boxes.
+
+---
+
+## 2. Strict Issue-Driven Development Workflow
+
+All feature additions, bug fixes, refactoring, and documentation updates must strictly follow this **6-stage lifecycle**:
 
 ```mermaid
 flowchart LR
-    A[1. Issue 作成] --> B[2. ブランチ作成]
-    B --> C[3. 実装 & テスト]
-    C --> D[4. コミット & プッシュ]
-    D --> E[5. PR & スカッシュマージ]
-    E --> F[6. ブランチ削除 & main同期]
+    A[1. Open Issue] --> B[2. Create Branch]
+    B --> C[3. Implement & Test]
+    C --> D[4. Commit & Push]
+    D --> E[5. PR & Squash Merge]
+    E --> F[6. Delete Branch & Sync main]
 ```
 
-### ステップ 1: Issue 作成
-作業着手前に、必ず GitHub Issue を作成します。
+### Step 1: Open an Issue
+Before beginning any work, create a GitHub Issue:
 ```bash
-gh issue create --title "<type>: <簡潔な説明>" --body "## 概要\n...\n## 実装内容\n..."
+gh issue create --title "<type>: <concise description in English>" --body "## Summary\n...\n## Scope of Changes\n..."
 ```
 
-### ステップ 2: ブランチ作成
-Issue 番号と連動したブランチを作成・チェックアウトします。
-- **ブランチ命名規則**: `{issue番号}/{type}/{kebab-case-description}`
-  - `type` の例: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`
-  - 例: `7/feat/loss-modernization-label-smoothing-z-loss`
+### Step 2: Create a Topic Branch
+Create and check out a branch linked to the issue number:
+- **Branch naming convention**: `{issue_number}/{type}/{kebab-case-description}`
+  - Common `type` prefixes: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `chore`
+  - Example: `7/feat/loss-modernization-label-smoothing-z-loss`
 ```bash
-git checkout -b {issue番号}/{type}/{説明をケバブケースで}
+git checkout -b {issue_number}/{type}/{kebab-case-description}
 ```
 
-### ステップ 3: 実装 & 検証
-- 変更箇所のコードを実装します。
-- **自動テストの全件通過を必ず確認**:
+### Step 3: Implement & Verify
+- Implement code changes.
+- **Ensure all automated workspace tests pass**:
   ```bash
   cargo test --workspace
   ```
-- 必要に応じて実機学習・推論バイナリの動作検証を実施:
+- Run formatting check and Clippy static analysis:
+  ```bash
+  cargo fmt --all -- --check
+  cargo clippy --workspace --all-targets -- -D warnings
+  ```
+- Verify real training/inference execution if applicable:
   ```bash
   cargo run --release -p oniwa-lm --bin train -- --steps 1
   ```
 
-### ステップ 4: コミット & プッシュ
-- コミットメッセージには Conventional Commits プレフィックスと Issue 番号を含めます。
-  - フォーマット: `<type>: <説明> (#<issue番号>)`
-  - 例: `feat: 損失関数の近代化（Label Smoothing および Z-loss 正則化）の導入 (#7)`
+### Step 4: Commit & Push
+- Include a Conventional Commits prefix and the issue number in English:
+  - Format: `<type>: <description in English> (#<issue_number>)`
+  - Example: `feat: introduce label smoothing and z-loss regularization (#7)`
 ```bash
-git add <変更ファイル>
-git commit -m "<type>: <説明> (#<issue番号>)"
-git push -u origin {ブランチ名}
+git add <files>
+git commit -m "<type>: <description in English> (#<issue_number>)"
+git push -u origin {branch_name}
 ```
 
-### ステップ 5: プルリクエスト作成 & スカッシュマージ
-- `gh pr create` で PR を作成します（本文に `Closes #<issue番号>` を記載）。
-- `gh pr merge --squash --delete-branch` でスカッシュマージを実行し、リモートブランチを自動削除します。
+### Step 5: Pull Request & Squash Merge
+- Create a PR via `gh pr create` (include `Closes #<issue_number>` in the body).
+- Perform a squash merge and delete the remote branch with `gh pr merge --squash --delete-branch`:
 ```bash
-gh pr create --title "<type>: <説明>" --body "## 概要\nIssue #<番号> の対応です。\n...\n\nCloses #<番号>"
-gh pr merge <PR番号> --squash --delete-branch
+gh pr create --title "<type>: <description in English>" --body "## Summary\nResolves #<issue_number>.\n...\n\nCloses #<issue_number>"
+gh pr merge <pr_number> --squash --delete-branch
 ```
 
-### ステップ 6: ブランチクリーンアップ & main 同期
-- ローカルを `main` ブランチに戻し、最新のコミットを取得して作業ツリーをクリーンに保ちます。
+### Step 6: Branch Cleanup & Sync main
+- Return to the `main` branch, pull the latest commits, and keep the working tree clean:
 ```bash
 git checkout main
 git pull origin main
@@ -84,16 +89,16 @@ git fetch --prune
 
 ---
 
-## 3. コーディング・実装上の重要ルール
+## 3. Key Implementation & Coding Rules
 
-1. **チェックポイントの後方互換性**:
-   - `ModelConfig` やチェックポイント関連構造体を変更する際は、既存のチェックポイントが破損しないよう `#[serde(default)]` やフォールバック処理を徹底すること。
-2. **Raspberry Pi 4 互換性と省電力**:
-   - 行列演算やループ処理は CPU キャッシュ効率を意識し、不要なヒープ再アロケーションを避けること。
-   - 熱制御（`thermal`）および消費電力積算（`power`）の計測ループを壊さないこと。
-3. **テストの保守**:
-   - 新機能追加時は、必ず対応するユニットテスト（数学的勾配チェック、構文スコア検証など）を同梱すること。
-   - `cargo test --workspace` が常に 100% グリーンであることを維持すること。
-4. **コードフォーマットと静的解析 (Git Hook)**:
-   - コミット時に自動で `cargo fmt --all` による整形と再ステージング、および `cargo clippy --workspace --all-targets -- -D warnings` による静的検証が `.githooks/pre-commit` により実行される。
-   - エージェント作業環境でも `git config core.hooksPath .githooks` を設定してフックを活用すること。
+1. **Checkpoint Backward Compatibility**:
+   - When modifying `ModelConfig` or checkpoint structures, always use `#[serde(default)]` and robust fallback handling so existing checkpoints remain readable.
+2. **Raspberry Pi 4 Compatibility & Low Power**:
+   - Optimize matrix multiplications and loops for CPU cache locality; minimize unnecessary heap allocations.
+   - Never break or bypass thermal monitoring (`thermal`) or power telemetry (`power`).
+3. **Test Integrity**:
+   - Accompany new features with thorough unit tests (finite difference gradient checks, syntax scoring, tokenizer roundtrips, etc.).
+   - Ensure `cargo test --workspace` remains 100% green at all times.
+4. **Automated Formatting and Linting (Git Hooks)**:
+   - A pre-commit hook in `.githooks/pre-commit` automatically runs `cargo fmt --all` and `cargo clippy --workspace --all-targets -- -D warnings` on staged files.
+   - Always ensure Git hooks are enabled: `git config core.hooksPath .githooks`.
