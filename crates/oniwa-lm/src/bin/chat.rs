@@ -8,7 +8,6 @@ use oniwa_lm::model::{ModelConfig, ModelWeights};
 use oniwa_lm::reproducibility::{compute_checksum_f32, DeterministicRng};
 use oniwa_lm::tokenizer::CharTokenizer;
 use std::io::{self, Write};
-use std::path::Path;
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -16,9 +15,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(" 💬 ONIWA (oniwa-lm): インタラクティブ対話チャット");
     println!("============================================================\n");
 
-    let base_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let data_dir = base_dir.join("data");
-    let logs_dir = base_dir.join("logs");
+    let workspace_root = oniwa_lm::find_workspace_root();
+    let data_dir = workspace_root.join("data");
+    let logs_dir = workspace_root.join("logs");
+    let base_dir = if workspace_root.join("crates/oniwa-lm/checkpoints").is_dir() {
+        workspace_root.join("crates/oniwa-lm")
+    } else {
+        workspace_root.clone()
+    };
     let vocab_path = data_dir.join("vocab.json");
 
     // コマンドライン引数の解析 (--checkpoint best / latest)

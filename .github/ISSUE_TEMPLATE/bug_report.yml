@@ -1,0 +1,43 @@
+name: 🐛 バグ報告 (Bug Report)
+description: 予期しないエラーや動作の不具合を報告します
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        バグの報告ありがとうございます。問題の迅速な特定・再現のため、可能な限り詳細な情報をご記入ください。
+  - type: textarea
+    id: description
+    attributes:
+      label: 発生した問題・バグの概要
+      description: どのような問題が発生したかを簡潔に記載してください。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 再現手順
+      description: 問題を再現するための具体的なコマンドや手順を記載してください。
+      placeholder: |
+        1. `cargo run --release -p oniwa-pipeline -- --all` を実行
+        2. `cargo run --release -p oniwa-lm --bin train -- --steps 100` を実行
+        3. 〇〇のエラーメッセージが表示される
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ・エラー出力
+      description: ターミナルに出力されたスタックトレースやエラーログを貼り付けてください。
+      render: shell
+  - type: textarea
+    id: environment
+    attributes:
+      label: 実行環境
+      description: OS、ハードウェア（PC / Raspberry Pi 4等）、Rustのバージョンを記載してください。
+      placeholder: |
+        - OS: Ubuntu 24.04 LTS / Raspberry Pi OS (64-bit) / macOS / Windows
+        - ハードウェア: Raspberry Pi 4 Model B (4GB) / x86_64 PC
+        - Rustバージョン: `rustc --version`
+    validations:
+      required: true

@@ -22,7 +22,7 @@
 素性の分からないBotとしてアクセスすることを禁じます。必ずプロジェクト名、目的、リポジトリURLを含めた User-Agent を設定します。
 
 ```http
-User-Agent: niwa-lm-crawler/0.1.0 (+https://github.com/KazutoMakino/my-mono-repo; Clean AI Educational Project)
+User-Agent: oniwa-crawler/0.1.0 (+https://github.com/KazutoMakino/oniwa; Clean AI Educational Project)
 ```
 
 ---

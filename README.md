@@ -3,7 +3,7 @@
 <p align="left">
   <a href="https://github.com/KazutoMakino/oniwa/actions"><img src="https://img.shields.io/github/actions/workflow/status/KazutoMakino/oniwa/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status"></a>
   <img src="https://img.shields.io/badge/language-Rust-DEA584.svg?logo=rust&logoColor=white&style=flat-square" alt="Rust">
-  <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
 </p>
 <p align="left">
@@ -50,8 +50,13 @@ oniwa/
 ├── logs/                       # [共通台帳]
 │   ├── ledger_index.jsonl      # データ系譜・推論・学習の統一監査台帳
 │   └── growth_journal.md       # 観葉植物・生育観察日記
-├── docs/                       # プロジェクト全体の思想・憲章・仕様書
+├── docs/                       # プロジェクト全体の思想・仕様書・詳細設計
 │   ├── 00_oniwa-project-manifesto.md
+│   ├── 01_llm_c_architecture.md
+│   ├── 02_modern_primitives.md
+│   ├── 03_rust_memory_model.md
+│   ├── 04_development_handoff.md
+│   ├── 05_reproducibility_and_logging.md
 │   ├── 06_thermal_and_end_to_end_provenance.md
 │   ├── 07_data_ingestion_charter.md
 │   └── 08_green_energy_and_power_tracking.md
@@ -64,7 +69,7 @@ oniwa/
         ├── Cargo.toml
         ├── src/                # Transformerモデル、手動Autograd、学習・推論
         ├── checkpoints/        # 学習チェックポイント
-        └── docs/               # アーキテクチャ詳細設計書
+        └── docs/               # 設計書参照リンク案内
 ```
 
 ---
@@ -196,4 +201,21 @@ cargo run --release -p oniwa-lm --bin chat
 - [データ受け入れ憲章（Data Ingestion Charter）](docs/07_data_ingestion_charter.md)
 - [環境負荷・グリーン電力トラッキング](docs/08_green_energy_and_power_tracking.md)
 - [監査台帳と温度管理仕様](docs/06_thermal_and_end_to_end_provenance.md)
-- [oniwa-lm アーキテクチャ設計](crates/oniwa-lm/docs/01_llm_c_architecture.md)
+- [oniwa-lm アーキテクチャ設計](docs/01_llm_c_architecture.md)
+
+---
+
+## コミュニティ & コントリビューション
+
+本プロジェクトはオープンソースコミュニティからの参加・改善を歓迎します！
+
+- [コントリビューションガイド (CONTRIBUTING.md)](CONTRIBUTING.md): 開発環境構築、PR作成フロー
+- [AI エージェント開発プロトコル (AGENTS.md)](AGENTS.md): 自律エージェント向け厳格運用規約
+- [行動規範 (CODE_OF_CONDUCT.md)](CODE_OF_CONDUCT.md): コミュニティ共通の行動規範
+- [セキュリティポリシー (SECURITY.md)](SECURITY.md): 脆弱性の非公開報告窓口
+
+---
+
+## ライセンス (License)
+
+本プロジェクトは **MIT License** のもとで公開されています。詳細は [LICENSE](LICENSE) を参照してください。

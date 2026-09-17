@@ -169,11 +169,11 @@ mod tests {
 
     #[test]
     fn test_ingest_sangetsuki_dataset() {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let raw_path = manifest_dir.join("data/sangetsuki_clean.txt");
+        let workspace_root = crate::find_workspace_root();
+        let raw_path = workspace_root.join("data/sangetsuki_clean.txt");
         if raw_path.exists() {
-            let data_dir = manifest_dir.join("data");
-            let logs_dir = manifest_dir.join("logs");
+            let data_dir = workspace_root.join("data");
+            let logs_dir = workspace_root.join("logs");
 
             let tokenizer = CharTokenizer::ingest_file(
                 &raw_path,
