@@ -1,6 +1,11 @@
 # Project Oniwa (庭) Manifesto
 — Intelligence as a Kitchen Garden: Clean Soil and Self-Transforming Architectures —
 
+<p align="left">
+  <b>English</b> | <a href="00_oniwa-project-manifesto.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 ---
 
 ## 1. Manifesto

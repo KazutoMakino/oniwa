@@ -1,48 +1,49 @@
-# 🌿 ONIWA 開発コントリビューションガイド (Contributing Guide)
+# 🌿 ONIWA Contribution Guide
 
 <p align="left">
-  <b>日本語</b> | <a href="CONTRIBUTING.en.md">English</a>
+  <b>English</b> | <a href="CONTRIBUTING.ja.md">日本語 (Japanese)</a>
 </p>
 
-ONIWA (お庭) プロジェクトへの興味とご協力をいただき、ありがとうございます！  
-本プロジェクトは、巨大データセンターや無断スクレイピングデータに頼らず、出自が100%追跡可能なクリーンなオープンデータと省電力エッジデバイスで自律育成する小さな知性（SLM）を目指しています。
+Thank you for your interest in contributing to the ONIWA (お庭) project!  
+ONIWA is dedicated to cultivating autonomous small language models (SLMs) in a home garden fashion—relying on clean, 100% provenance-audited open data and energy-efficient edge hardware (such as Raspberry Pi 4) rather than mega-scale GPU clusters and scraped web data.
 
-バグ報告、機能提案、コードの改善、ドキュメントの加筆など、あらゆるコントリビューションを心から歓迎します。
-
----
-
-## 1. コア原則（Core Principles）
-
-コントリビューションにあたり、以下の設計思想を共有してください：
-
-1. **ピュア Rust 原則 (Pure Rust)**:  
-   外部 ML フレームワーク（PyTorch, TensorFlow, CUDA 等）への依存は一切行いません。すべての順伝播・逆伝播・オプティマイザ・データ処理をピュア Rust で完結させます。
-2. **出自の完全な透明性 (Provenance & Auditability)**:  
-   学習コーパス・語彙・重みのSHA-256チェックサムを監査台帳（`logs/ledger_index.jsonl`）に記録し、ブラックボックスを排除します。
-3. **エッジ互換性と省電力 (Raspberry Pi 4 互換)**:  
-   約 5W の省電力環境で稼働することを最優先とし、熱制御・消費電力トラッキングを阻害しない実装を徹底します。
-4. **著作権法と倫理の遵守**:  
-   取り込むデータは、パブリックドメイン（著作権満了）またはCC0/MIT/Apache-2.0等の明確に許諾されたオープンソース・公的オープンデータに限定されます。詳細は [データ受け入れ憲章](docs/07_data_ingestion_charter.md) を参照してください。
+We warmly welcome bug reports, feature suggestions, code optimizations, and documentation improvements from developers and researchers worldwide.
 
 ---
 
-## 2. 開発環境のセットアップ
+## 1. Core Principles
 
-### 前提ツール
-- **Rust Toolchain**: 1.75 以上（`stable` 推奨）
+Before contributing, please familiarize yourself with our fundamental design principles:
+
+1. **Pure Rust Principle**:  
+   We strictly prohibit dependencies on external ML frameworks (PyTorch, TensorFlow, CUDA, etc.). All forward passes, backward passes, optimizers, data cleaning, and hardware telemetry must be implemented in Pure Rust.
+2. **100% Provenance & Auditability**:  
+   Every piece of training data, vocabulary table, model checkpoint, and commit hash is cryptographically fingerprinted (SHA-256) and logged into an audit ledger (`logs/ledger_index.jsonl`).
+3. **Edge Hardware Compatibility (~5W Constraint)**:  
+   The primary deployment target is edge hardware like Raspberry Pi 4. Code changes should prioritize CPU cache efficiency, zero unnecessary allocations, and must never disrupt thermal throttling or power tracking.
+4. **Legal Clearance & Respect for Creators**:  
+   Ingested corpora are strictly limited to copyright-expired public domain works, public legal texts, or permissible open-license materials (MIT, Apache-2.0, CC0). See [Data Ingestion Charter](docs/07_data_ingestion_charter.md) / [日本語](docs/07_data_ingestion_charter.ja.md) for details.
+
+---
+
+## 2. Development Setup
+
+### Prerequisites
+- **Rust Toolchain**: 1.75 or higher (`stable` recommended)
 - **Git**
 
-### リポジトリのクローン & Git Hook 有効化
-本リポジトリにはコミット時に自動フォーマット（`cargo fmt`）と Clippy 静的解析（`cargo clippy`）を行うフックが含まれています。
+### Clone & Enable Pre-commit Hook
+This repository includes a pre-commit hook that automatically formats Rust code (`cargo fmt`) and checks for Clippy lints (`cargo clippy`). Enable it once after cloning:
 ```bash
 git clone https://github.com/KazutoMakino/oniwa.git
 cd oniwa
 
-# コミットフックを有効化
+# Enable the repository Git hooks
 git config core.hooksPath .githooks
 ```
 
-### ビルドとテストの確認
+### Build & Verification
+Ensure the workspace builds and all tests pass cleanly:
 ```bash
 cargo check --workspace
 cargo test --workspace
@@ -51,56 +52,56 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ---
 
-## 3. コントリビューション・ワークフロー
+## 3. Contribution Workflow
 
-本プロジェクトでは、トレーサビリティを確保するため **Issue ドリブン開発** を推奨しています。
+To maintain traceability, we adopt an **Issue-Driven Development** workflow.
 
-### ステップ 1: Issue の確認・作成
-- 大きな機能追加や仕様変更を行う場合は、まず [GitHub Issues](https://github.com/KazutoMakino/oniwa/issues) で Issue を作成（または既存の Issue にコメント）し、方向性について事前に議論してください。
+### Step 1: Open or Select an Issue
+- Before starting work on major features or architectural refactors, please open a [GitHub Issue](https://github.com/KazutoMakino/oniwa/issues) to discuss your ideas and approach.
 
-### ステップ 2: トピックブランチの作成
-ブランチ名は以下のプレフィックスを用いたケバブケースを推奨します：
-`{issue番号}/{type}/{kebab-case-description}`
-- `type`: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `chore`
-- 例: `42/feat/cosine-lr-warmup-min`
+### Step 2: Create a Feature Branch
+Use our kebab-case branch naming convention linked to the issue number:
+`{issue_number}/{type}/{kebab-case-description}`
+- Common `type` prefixes: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `chore`
+- Example: `42/feat/cosine-lr-warmup-min`
 ```bash
 git checkout -b 42/feat/cosine-lr-warmup-min
 ```
 
-### ステップ 3: 実装と検証
-- 変更箇所のコードを記述します。
-- **全自動テストの通過を必ず確認してください**:
+### Step 3: Implement & Verify
+- Write clean, well-tested, and idiomatic Rust code.
+- **Always ensure all automated tests pass**:
   ```bash
   cargo test --workspace
   ```
-- コードスタイルと静的解析のチェック:
+- Run formatting and static analysis:
   ```bash
   cargo fmt --all -- --check
   cargo clippy --workspace --all-targets -- -D warnings
   ```
 
-### ステップ 4: コミットとプッシュ
-Conventional Commits に準拠したコミットメッセージを推奨します：
-`<type>: <簡潔な説明> (#<issue番号>)`
+### Step 4: Commit & Push
+We recommend Conventional Commits referencing the issue number:
+`<type>: <description> (#<issue_number>)`
 ```bash
 git add .
-git commit -m "feat: 学習率コサイン減衰にウォームアップステップを追加 (#42)"
+git commit -m "feat: add linear warmup to cosine learning rate schedule (#42)"
 git push -u origin 42/feat/cosine-lr-warmup-min
 ```
 
-### ステップ 5: プルリクエスト（PR）作成
-- GitHub 上で Pull Request を作成します。
-- PR の本文には概要と、対応する Issue 番号（`Closes #42` など）を明記してください。
-- CI（GitHub Actions）が自動実行され、全テスト・フォーマット・Clippy チェックが検証されます。
+### Step 5: Submit a Pull Request
+- Open a Pull Request on GitHub.
+- Reference the issue number in the PR description (e.g., `Closes #42`).
+- GitHub Actions CI will automatically run tests, formatting, and Clippy checks.
 
 ---
 
-## 4. AI エージェントを活用した開発プロトコル
+## 4. AI Agent Protocol
 
-AI コーディングアシスタント（Antigravity、Claude Code、GitHub Copilot、Gemini CLI 等）を使用して開発を進める場合は、プロジェクトルートの [**`AGENTS.md`**](AGENTS.md) に定義された自律開発プロトコルを遵守させてください。
+If you are developing using autonomous AI coding assistants (such as Antigravity, Claude Code, GitHub Copilot CLI, Gemini CLI, etc.), please ensure they follow the autonomous agent protocols specified in [`AGENTS.md`](AGENTS.md).
 
 ---
 
-## 5. コミュニティ行動規範
+## 5. Community Code of Conduct
 
-すべての参加者が安全かつ敬意を持って参加できるよう、[行動規範 (CODE_OF_CONDUCT.md)](CODE_OF_CONDUCT.md) を定めています。ご理解とご協力をお願いいたします。
+To foster an inclusive and safe environment, all contributors are expected to adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) / [日本語](CODE_OF_CONDUCT.ja.md).

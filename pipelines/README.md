@@ -1,5 +1,9 @@
 # ONIWA Data Pipelines
 
+<p align="left">
+  <b>English</b> | <a href="README.ja.md">日本語 (Japanese)</a>
+</p>
+
 Dedicated crate (`oniwa-pipeline`) responsible for clean data preparation (collecting and preprocessing 100% provenance-traceable open data) in the ONIWA project.
 
 ---

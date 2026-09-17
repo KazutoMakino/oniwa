@@ -1,5 +1,10 @@
 # Phase 3 Addendum 3: Clean Data Ingestion Charter
 
+<p align="left">
+  <b>English</b> | <a href="07_data_ingestion_charter.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 The "Kitchen Garden & Organic AI (`oniwa-lm`)" philosophy prioritizes **transparency, legality, and etiquette toward remote servers** far above data volume or acquisition speed.
 
 This charter defines the engineering etiquette and legal compliance standards governing all data ingestion pipelines.

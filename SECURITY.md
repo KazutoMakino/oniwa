@@ -1,32 +1,32 @@
-# 🔒 セキュリティポリシー (Security Policy)
+# 🔒 Security Policy
 
 <p align="left">
-  <b>日本語</b> | <a href="SECURITY.en.md">English</a>
+  <b>English</b> | <a href="SECURITY.ja.md">日本語 (Japanese)</a>
 </p>
 
-## サポート対象バージョン
+## Supported Versions
 
-ONIWA プロジェクトは現在アクティブに開発進行中であり、以下の最新コミット/リリースに対してセキュリティ修正を提供します。
+The ONIWA project is actively developed. Security patches and fixes are provided for the following versions:
 
-| バージョン | サポート状況 |
+| Version | Supported |
 | :--- | :--- |
-| `main` ブランチ (最新) | :white_check_mark: サポート対象 |
-| < 0.1.0 (古いコミット) | :x: 非サポート |
+| `main` branch (latest commit) | :white_check_mark: Supported |
+| < 0.1.0 (older commits) | :x: Not supported |
 
 ---
 
-## 脆弱性の報告方法 (Reporting a Vulnerability)
+## Reporting a Vulnerability
 
-本プロジェクトにおけるセキュリティ上の脆弱性（潜在的なデータ漏洩、メモリ破壊、安全性の問題など）を発見された場合は、**パブリックな Issue として公開せず**、以下のいずれかの方法で非公開にてご報告ください：
+If you discover a potential security vulnerability (e.g., memory unsafety, information disclosure, or denial-of-service risks), **please do not open a public issue**. Instead, report it privately using one of the following channels:
 
-1. **GitHub Private Vulnerability Reporting（推奨）**:
-   - リポジトリの [Security タブ](https://github.com/KazutoMakino/oniwa/security) から **"Report a vulnerability"** を選択して非公開アドバイザリを作成してください。
-2. **メンテナーへの直接連絡**:
-   - GitHub プロフィール記載の連絡先、またはメンテナーのメールアドレス宛にご連絡ください。
+1. **GitHub Private Vulnerability Reporting (Recommended)**:
+   - Navigate to the repository's [Security tab](https://github.com/KazutoMakino/oniwa/security) and click **"Report a vulnerability"** to create a confidential draft advisory.
+2. **Direct Contact**:
+   - Contact the project maintainer via the email address or contact info listed on their GitHub profile.
 
-### 報告に含めていただきたい情報
-- 影響を受けるコンポーネント（例: `oniwa-lm`, `oniwa-pipeline`, CLIツール等）
-- 問題の概要と再現手順（PoCコードや実行コマンド例）
-- 想定される影響範囲（DoS、パニック、意図しないリソース枯渇など）
+### Information to Include
+- Affected crate or component (e.g., `oniwa-lm`, `oniwa-pipeline`, CLI binaries, etc.)
+- Clear description of the vulnerability with reproduction steps (PoC code or command sequences)
+- Potential impact assessment (DoS, panic, unexpected resource consumption, etc.)
 
-ご報告いただいた内容については、メンテナーが速やかに確認し、修正パッチの作成とアドバイザリの公開対応を行います。
+We will acknowledge receipt promptly, review the findings, and coordinate a fix and public advisory.

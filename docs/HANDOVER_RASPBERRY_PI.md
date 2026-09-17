@@ -2,6 +2,11 @@
 
 > **Target**: Project migration from PC (`km-gpd`) to **Raspberry Pi** physical hardware, and complete context handover for AI agents.
 
+<p align="left">
+  <b>English</b> | <a href="HANDOVER_RASPBERRY_PI.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 ---
 
 ## 1. Project Status & Core Architecture

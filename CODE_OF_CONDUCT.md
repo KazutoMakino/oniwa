@@ -1,46 +1,47 @@
-# 🌿 コントリビューター行動規範 (Contributor Covenant Code of Conduct)
+# 🌿 Contributor Covenant Code of Conduct
 
 <p align="left">
-  <b>日本語</b> | <a href="CODE_OF_CONDUCT.en.md">English</a>
+  <b>English</b> | <a href="CODE_OF_CONDUCT.ja.md">日本語 (Japanese)</a>
 </p>
 
-## 私たちの誓約
+## Our Pledge
 
-オープンで友好的な環境を提供するため、私たちコントリビューターおよびメンテナーは、年齢、身体の大きさ、障がいの有無、民族性、性別適合、性同一性および表現、経験のレベル、教育、社会経済的地位、国籍、容姿、人種、宗教、または性的アイデンティティと性的指向にかかわらず、本プロジェクトおよび私たちのコミュニティへの参加をすべての人にとってハラスメントのない体験にすることを誓約します。
+We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, caste, color, religion, or sexual identity and orientation.
 
-私たちは、前向きで開放的、歓迎的、安全で協調的なコミュニティを構築するよう行動し、相互に協力します。
+We pledge to act and interact in ways that contribute to an open, welcoming, diverse, inclusive, and healthy community.
 
-## 私たちの基準
+## Our Standards
 
-好ましい環境作りに貢献する行動の例：
-- 他者に対する共感と敬意を表すこと
-- 異なる意見、観点、および経験を受け入れ、尊重すること
-- 建設的なフィードバックを優雅に受け入れ、提供すること
-- 誤りを受け入れ、影響を受けた人々に謝罪し、その経験から学ぶこと
-- 個人だけでなく、コミュニティ全体にとって何が最善であるかに焦点を当てること
+Examples of behavior that contributes to a positive environment for our community include:
+* Demonstrating empathy and kindness toward other people
+* Being respectful of differing opinions, viewpoints, and experiences
+* Giving and gracefully accepting constructive feedback
+* Accepting responsibility and apologizing to those affected by our mistakes, and learning from the experience
+* Focusing on what is best not just for us as individuals, but for the overall community
 
-容認されない行動の例：
-- 性的な言葉や画像の利用、および不適切な性的関心や前触れ
-- トローリング、侮辱的または軽蔑的なコメント、および個人的または政治的な攻撃
-- パブリックまたはプライベートなハラスメント
-- 明示的な許可のない他者の個人情報（物理的な住所や電子メールアドレスなど）の公開
-- 合理的に専門的な場で不適切であるとみなされるその他の行為
+Examples of unacceptable behavior include:
+* The use of sexualized language or imagery, and sexual attention or advances of any kind
+* Trolling, insulting or derogatory comments, and personal or political attacks
+* Public or private harassment
+* Publishing others' private information, such as a physical or email address, without their explicit permission
+* Other conduct which could reasonably be considered inappropriate in a professional setting
 
-## 執行責任
+## Enforcement Responsibilities
 
-コミュニティリーダーは、私たちの許容される行動の基準を明確にし、これを遵守させる責任があります。また、不適切な、脅迫的な、不快な、または有害であるとみなされるコメント、コミット、コード、Wiki編集、問題、およびその他の貢献を削除、編集、または拒否する権利と責任を持ちます。
+Community leaders are responsible for clarifying and enforcing our standards of acceptable behavior and will take appropriate and fair corrective action in response to any behavior that they deem inappropriate, threatening, offensive, or harmful.
 
-## 適用範囲
+Community leaders have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct, and will communicate reasons for moderation decisions when appropriate.
 
-この行動規範は、個人が公式にコミュニティを代表しているかどうかにかかわらず、すべてのコミュニティスペースに適用され、オンラインおよびオフラインの双方が対象となります。
+## Scope
 
-## 報告と執行
+This Code of Conduct applies within all community spaces, and also applies when an individual is officially representing the community in public spaces.
 
-不適切、嫌がらせ、またはその他の容認できない行動の事例は、プロジェクトメンテナーに報告することができます。すべての苦情は、迅速かつ公正に審査・調査されます。
+## Enforcement
 
-すべてのコミュニティリーダーは、インシデントの報告者のプライバシーとセキュリティを尊重する義務があります。
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement. All complaints will be reviewed and investigated promptly and fairly.
 
-## 帰属
+All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 
-この行動規範は、Contributor Covenant バージョン 2.1 を基に策定されています。
-原文: https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
+## Attribution
+
+This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org), version 2.1, available at https://www.contributor-covenant.org/version/2/1/code_of_conduct.html.

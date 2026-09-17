@@ -1,5 +1,10 @@
 # Phase 3 Addendum: Full Logging, Deterministic Reproducibility & Low-Memory Build Guide
 
+<p align="left">
+  <b>English</b> | <a href="05_reproducibility_and_logging.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 In the "Kitchen Garden & Clean AI (`oniwa-lm`)" philosophy, **Full Provenance Logging** and **Deterministic Reproducibility** form the core foundation upholding the integrity and trustworthiness of the project.
 
 This document specifies the logging formats, determinism guarantees, and concrete mitigation steps to prevent out-of-memory (OOM) errors during compilation on memory-constrained devices like Raspberry Pi 4 (2GB–4GB RAM).

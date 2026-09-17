@@ -1,5 +1,10 @@
 # Phase 3: Development & Execution Handover Guide (16GB RAM)
 
+<p align="left">
+  <b>English</b> | <a href="04_development_handoff.ja.md">日本語 (Japanese)</a>
+</p>
+
+
 This document provides a comprehensive guide for continuing implementation, testing, and training of `oniwa-lm` on another machine (e.g., 16GB RAM environment).
 
 ---

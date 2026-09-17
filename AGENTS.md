@@ -1,5 +1,9 @@
 # 🌿 ONIWA Development Guidelines (Agent Protocol)
 
+<p align="left">
+  <b>English</b> | <a href="AGENTS.ja.md">日本語 (Japanese)</a>
+</p>
+
 This document defines the **code of conduct and development protocol** to be strictly observed by all AI agents (Antigravity, Gemini, Claude, etc.) and developers working in this repository (`oniwa`).
 
 When starting a new session or working in a separate chat context, **always adhere to this protocol autonomously.**
