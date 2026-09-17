@@ -231,6 +231,7 @@ cargo run --release -p oniwa-decide --bin train -- --add-steps 100
 - [Green Energy & Power Tracking](docs/08_green_energy_and_power_tracking.md) / [日本語](docs/08_green_energy_and_power_tracking.ja.md)
 - [Provenance Ledger & Thermal Management](docs/06_thermal_and_end_to_end_provenance.md) / [日本語](docs/06_thermal_and_end_to_end_provenance.ja.md)
 - [oniwa-lm Architecture Design](docs/01_llm_c_architecture.md) / [日本語](docs/01_llm_c_architecture.ja.md)
+- [System One Hypotheses Design Doc](docs/design/system-one-hypotheses.md) / [日本語](docs/design/system-one-hypotheses.ja.md)
 
 ---
 
