@@ -1,5 +1,9 @@
 # 🔒 セキュリティポリシー (Security Policy)
 
+<p align="left">
+  <b>日本語</b> | <a href="SECURITY.en.md">English</a>
+</p>
+
 ## サポート対象バージョン
 
 ONIWA プロジェクトは現在アクティブに開発進行中であり、以下の最新コミット/リリースに対してセキュリティ修正を提供します。
