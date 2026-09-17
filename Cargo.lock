@@ -290,6 +290,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
+name = "oniwa-decide"
+version = "0.1.0"
+dependencies = [
+ "matrixmultiply",
+ "oniwa-lm",
+ "rand",
+ "rand_chacha",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "oniwa-lm"
 version = "0.1.0"
 dependencies = [
