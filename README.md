@@ -5,7 +5,7 @@
 </p>
 
 <p align="left">
-  <a href="https://github.com/KazutoMakino/oniwa/actions"><img src="https://img.shields.io/github/actions/workflow/status/KazutoMakino/oniwa/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status"></a>
+  <a href="https://github.com/KazutoMakino/oniwa/actions/workflows/ci.yml"><img src="https://github.com/KazutoMakino/oniwa/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI Status"></a>
   <img src="https://img.shields.io/badge/language-Rust-DEA584.svg?logo=rust&logoColor=white&style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
