@@ -1,7 +1,7 @@
 use std::process::Command;
 
 fn main() {
-    // 1. Git コミットハッシュの取得 (40桁完全ハッシュ)
+    // 1. Retrieve full 40-character Git commit hash
     let commit_hash = Command::new("git")
         .args(["rev-parse", "HEAD"])
         .output()
@@ -23,7 +23,7 @@ fn main() {
         commit_hash.clone()
     };
 
-    // 2. 作業ツリーの変更有無 (git dirty) の取得
+    // 2. Check if working tree has unstaged/uncommitted changes (git dirty)
     let is_dirty = Command::new("git")
         .args(["status", "--porcelain"])
         .output()
@@ -35,7 +35,7 @@ fn main() {
     println!("cargo:rustc-env=ONIWA_GIT_SHORT_HASH={}", short_hash);
     println!("cargo:rustc-env=ONIWA_GIT_DIRTY={}", is_dirty);
 
-    // .git 参照の変更を検知して環境変数を再評価
+    // Re-run build script if Git state changes
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/index");
 }

@@ -1,18 +1,18 @@
-# Phase 2: 最新仕様（Modern Transformer Primitives）への適合と手動微分設計
+# Phase 2: Adaptation to Modern Transformer Primitives & Manual Derivative Derivations
 
-`llm.c` の原型である GPT-2 は、2019年当時の古典的な Transformer アーキテクチャに基づいています。
-2026年現在のオープンモデルの潮流（Gemma 4, Llama 3系など）では、計算効率・表現力・メモリ帯域のボトルネックを解消するために、より洗練された **「Modern Transformer Primitives」** がデファクトスタンダードとなっています。
+GPT-2, the archetype of `llm.c`, was based on the classical Transformer architecture of 2019.
+In contemporary open model designs (e.g. Gemma, Llama 3), **Modern Transformer Primitives** have become the de facto standard to eliminate computational bottlenecks, maximize representation capacity, and optimize memory bandwidth.
 
-本ドキュメントでは、`niwa-lm` に採用する4大コンポーネント（**RMSNorm**, **RoPE**, **SwiGLU**, **GQA**）の数学的定義（順伝播）と、手動逆伝播（Backward）に必要な偏微分の導出式を完全整理します。
+This document formulates the mathematical definitions (forward pass) and derives the analytical partial derivatives (backward pass) for the four major components adopted in `oniwa-lm`: **RMSNorm**, **RoPE**, **SwiGLU**, and **GQA**.
 
 ---
 
 ## 1. RMSNorm (Root Mean Square Normalization)
 
-LayerNormの「平均の減算」を省き、二乗平均平方根（RMS）のみで正規化する手法です。
+RMSNorm simplifies LayerNorm by eliminating mean centering, normalizing inputs solely by their root mean square.
 
-### 1.1 順伝播（Forward）
-入力ベクトル $x \in \mathbb{R}^d$、スケーリングパラメータ $\gamma \in \mathbb{R}^d$（重み）：
+### 1.1 Forward Pass
+For input vector $x \in \mathbb{R}^d$ and scaling parameter $\gamma \in \mathbb{R}^d$ (weight):
 
 $$\text{RMS}(x) = \sqrt{\frac{1}{d} \sum_{j=1}^d x_j^2 + \epsilon}$$
 
@@ -20,79 +20,79 @@ $$\hat{x}_i = \frac{x_i}{\text{RMS}(x)}$$
 
 $$y_i = \hat{x}_i \cdot \gamma_i$$
 
-### 1.2 手動微分の導出（Backward）
-上流から流れてきた出力勾配を $\frac{\partial L}{\partial y_i}$ とします。
+### 1.2 Analytical Derivative Derivation (Backward Pass)
+Let the incoming gradient from upstream be $\frac{\partial L}{\partial y_i}$.
 
-1. **パラメータ勾配 $\frac{\partial L}{\partial \gamma_i}$**:
+1. **Parameter Gradient $\frac{\partial L}{\partial \gamma_i}$**:
    $$\frac{\partial L}{\partial \gamma_i} = \sum_{B, T} \frac{\partial L}{\partial y_i} \cdot \hat{x}_i$$
 
-2. **入力勾配 $\frac{\partial L}{\partial x_i}$**:
-   連鎖律より、
+2. **Input Gradient $\frac{\partial L}{\partial x_i}$**:
+   By the chain rule:
    $$\frac{\partial L}{\partial x_i} = \frac{\gamma_i}{\text{RMS}(x)} \cdot \frac{\partial L}{\partial y_i} + \sum_{j=1}^d \left( \frac{\partial L}{\partial y_j} \cdot \gamma_j \cdot x_j \right) \cdot \frac{\partial (1/\text{RMS}(x))}{\partial x_i}$$
 
-   ここで $\frac{\partial (1/\text{RMS}(x))}{\partial x_i} = -\frac{x_i}{d \cdot \text{RMS}(x)^3}$ であるため、整理すると：
+   Since $\frac{\partial (1/\text{RMS}(x))}{\partial x_i} = -\frac{x_i}{d \cdot \text{RMS}(x)^3}$, simplifying yields:
 
    $$\frac{\partial L}{\partial x_i} = \frac{1}{\text{RMS}(x)} \left[ \gamma_i \frac{\partial L}{\partial y_i} - \frac{\hat{x}_i}{d} \sum_{j=1}^d \left( \frac{\partial L}{\partial y_j} \cdot \gamma_j \cdot \hat{x}_j \right) \right]$$
 
 > [!TIP]
-> **手動Backwardにおける圧倒的な利点**  
-> LayerNormでは「平均 $\mu$」と「分散 $\sigma^2$」の2つの統計量を逆伝播まで保持し、複雑な平均減算の連鎖律を解く必要がありました。  
-> RMSNormなら、スカラー内積 $S = \sum_j (\frac{\partial L}{\partial y_j} \cdot \gamma_j \cdot \hat{x}_j)$ を1回計算するだけで、入力勾配を一撃で算出できます。
+> **Key Advantage for Manual Backward Passes**  
+> In LayerNorm, both mean $\mu$ and variance $\sigma^2$ had to be cached, requiring complex nested reductions during backpropagation.  
+> With RMSNorm, a single scalar dot product $S = \sum_j (\frac{\partial L}{\partial y_j} \cdot \gamma_j \cdot \hat{x}_j)$ allows computing input gradients in a single vector pass.
 
 ---
 
 ## 2. RoPE (Rotary Position Embedding)
 
-絶対位置埋め込みテーブルを足すのではなく、QueryとKeyの各チャネルペアを複素平面上で回転させることで、内積計算時に「相対的な位置関係」を自然に反映させる手法です。
+Instead of adding an absolute positional embedding table, RoPE rotates adjacent pairs of channels on the complex plane for Query and Key vectors, allowing the dot product to naturally encode relative positional distance.
 
-### 2.1 順伝播（Forward）
-位置 $m \in [0, T-1]$ におけるベクトル（Query または Key）の $2i$ 番目と $2i+1$ 番目のチャネルペアに対し：
+### 2.1 Forward Pass
+For vector channels $(2i, 2i+1)$ at sequence position $m \in [0, T-1]$:
 
-$$\theta_i = b^{-2i/d} \quad (b = 10000 \text{ または } 500000)$$
+$$\theta_i = b^{-2i/d} \quad (b = 10000 \text{ or } 500000)$$
 
 $$\begin{pmatrix} q'_{2i} \\ q'_{2i+1} \end{pmatrix} = \begin{pmatrix} \cos(m\theta_i) & -\sin(m\theta_i) \\ \sin(m\theta_i) & \cos(m\theta_i) \end{pmatrix} \begin{pmatrix} q_{2i} \\ q_{2i+1} \end{pmatrix}$$
 
-### 2.2 手動微分の導出（Backward）
-回転行列 $R_m = \begin{pmatrix} \cos(m\theta_i) & -\sin(m\theta_i) \\ \sin(m\theta_i) & \cos(m\theta_i) \end{pmatrix}$ は**直交行列（Orthogonal Matrix）**です。
+### 2.2 Analytical Derivative Derivation (Backward Pass)
+The rotation matrix $R_m = \begin{pmatrix} \cos(m\theta_i) & -\sin(m\theta_i) \\ \sin(m\theta_i) & \cos(m\theta_i) \end{pmatrix}$ is an **orthogonal matrix**.
 
-直交行列の逆行列は転置行列に等しいため（$R_m^T = R_m^{-1} = R_{-m}$）、上流の勾配 $\frac{\partial L}{\partial q'}$ に対する入力勾配は、**「逆回転（角度の符号反転）」を掛けるだけ**で求まります。
+Because the inverse of an orthogonal matrix equals its transpose ($R_m^T = R_m^{-1} = R_{-m}$), the input gradient with respect to upstream gradient $\frac{\partial L}{\partial q'}$ is simply computed by **applying the reverse rotation (inverting the sign of the angle)**:
 
 $$\begin{pmatrix} \frac{\partial L}{\partial q_{2i}} \\ \frac{\partial L}{\partial q_{2i+1}} \end{pmatrix} = \begin{pmatrix} \cos(m\theta_i) & \sin(m\theta_i) \\ -\sin(m\theta_i) & \cos(m\theta_i) \end{pmatrix} \begin{pmatrix} \frac{\partial L}{\partial q'_{2i}} \\ \frac{\partial L}{\partial q'_{2i+1}} \end{pmatrix}$$
 
 > [!NOTE]
-> RoPEには**学習可能なパラメータが一切存在しません**。
-> そのためパラメータ勾配の計算やオプティマイザの更新バッファが不要で、順伝播とほぼ同一のコード（$\sin$ の符号を変えるだけ）でインプレースに逆伝播を実装できます。
+> RoPE introduces **zero learnable parameters**.
+> It requires no parameter gradient tracking or optimizer states, and its backward pass executes in-place using nearly identical logic to the forward pass by simply flipping the sine term.
 
 ---
 
 ## 3. SwiGLU (Swish Gated Linear Unit)
 
-従来の GPT-2 で使われていた `GELU(x W_1) W_2` の代わりに、2本のプロジェクションの要素積をとるゲーティング機構です。現代の最高性能LLMでほぼ標準採用されています。
+SwiGLU replaces the conventional `GELU(x W_1) W_2` MLP with a gated element-wise product of two linear projections, substantially enhancing representation fidelity.
 
-### 3.1 順伝播（Forward）
-入力 $x \in \mathbb{R}^d$、隠れ層次元 $d_{\text{ffn}}$ に対し、3つの重み行列 $W_{\text{gate}}, W_{\text{up}} \in \mathbb{R}^{d \times d_{\text{ffn}}}$, $W_{\text{down}} \in \mathbb{R}^{d_{\text{ffn}} \times d}$ を使用：
+### 3.1 Forward Pass
+For input $x \in \mathbb{R}^d$ and hidden dimension $d_{\text{ffn}}$, using weight matrices $W_{\text{gate}}, W_{\text{up}} \in \mathbb{R}^{d \times d_{\text{ffn}}}$, $W_{\text{down}} \in \mathbb{R}^{d_{\text{ffn}} \times d}$:
 
-1. $u = x W_{\text{gate}}$ （ゲート側）
-2. $v = x W_{\text{up}}$ （アップ側）
-3. $h = \text{Swish}(u) \odot v = \big( u \cdot \sigma(u) \big) \odot v$ （$\sigma$ はシグモイド関数）
+1. $u = x W_{\text{gate}}$ (gate branch)
+2. $v = x W_{\text{up}}$ (up branch)
+3. $h = \text{Swish}(u) \odot v = \big( u \cdot \sigma(u) \big) \odot v$ ($\sigma$ is the sigmoid function)
 4. $\text{out} = h W_{\text{down}}$
 
-### 3.2 手動微分の導出（Backward）
-上流勾配を $\frac{\partial L}{\partial \text{out}}$ とします。
+### 3.2 Analytical Derivative Derivation (Backward Pass)
+Let the incoming gradient be $\frac{\partial L}{\partial \text{out}}$.
 
-1. **Down Proj の逆伝播**:
+1. **Down-Projection Backward**:
    $$\frac{\partial L}{\partial h} = \frac{\partial L}{\partial \text{out}} W_{\text{down}}^T, \quad \frac{\partial L}{\partial W_{\text{down}}} = h^T \frac{\partial L}{\partial \text{out}}$$
 
-2. **SwiGLU 要素積の逆伝播**:
-   積の微分法則より、
+2. **SwiGLU Element-wise Product Backward**:
+   By the product rule:
    $$\frac{\partial L}{\partial v} = \frac{\partial L}{\partial h} \odot \text{Swish}(u)$$
 
    $$\frac{\partial L}{\partial u} = \frac{\partial L}{\partial h} \odot v \odot \text{Swish}'(u)$$
 
-   ここで $\text{Swish}(u) = u \sigma(u)$ の導関数は：
+   Where the derivative of $\text{Swish}(u) = u \sigma(u)$ is:
    $$\text{Swish}'(u) = \sigma(u) + u \sigma(u)(1 - \sigma(u)) = \sigma(u) \big[ 1 + u (1 - \sigma(u)) \big]$$
 
-3. **Gate / Up Proj の逆伝播**:
+3. **Gate / Up Projections Backward**:
    $$\frac{\partial L}{\partial W_{\text{gate}}} = x^T \frac{\partial L}{\partial u}, \quad \frac{\partial L}{\partial W_{\text{up}}} = x^T \frac{\partial L}{\partial v}$$
    $$\frac{\partial L}{\partial x} = \frac{\partial L}{\partial u} W_{\text{gate}}^T + \frac{\partial L}{\partial v} W_{\text{up}}^T$$
 
@@ -100,31 +100,30 @@ $$\begin{pmatrix} \frac{\partial L}{\partial q_{2i}} \\ \frac{\partial L}{\parti
 
 ## 4. GQA (Grouped-Query Attention)
 
-Multi-Head Attention (MHA) では Query と同じ数だけ Key/Value ヘッドを持ちますが、GQA では KV ヘッドをグループ化して削減します。
+While Multi-Head Attention (MHA) pairs each Query head with its own Key/Value heads, GQA groups Query heads to share fewer Key/Value heads.
 
 ```text
-Query Heads:    [Q0] [Q1]   [Q2] [Q3]   ... (HQ 個)
+Query Heads:    [Q0] [Q1]   [Q2] [Q3]   ... (HQ total)
                   \   /       \   /
-KV Heads:         [KV0]       [KV1]     ... (HKV 個, HQ / HKV = G)
+KV Heads:         [KV0]       [KV1]     ... (HKV total, HQ / HKV = G)
 ```
 
-### 4.1 順伝播・逆伝播における差分
-* **順伝播**:
-  グループ比率 $G = H_Q / H_{KV}$。
-  Query ヘッド $q$ がアテンションスコアを計算する際、対応する KV ヘッド $k = \lfloor q / G \rfloor$ をブロードキャスト（参照）して使用します。
-* **逆伝播**:
-  $q$ ごとに逆伝播で計算された $\frac{\partial L}{\partial K_q}$ および $\frac{\partial L}{\partial V_q}$ は、**同じ KV ヘッドを参照していた $G$ 個の Query ヘッドの勾配の総和（Reduction / Add）** となります。
+### 4.1 Forward & Backward Pass Differences
+* **Forward**:
+  With group ratio $G = H_Q / H_{KV}$, Query head $q$ references shared KV head $k = \lfloor q / G \rfloor$.
+* **Backward**:
+  The gradients $\frac{\partial L}{\partial K_q}$ and $\frac{\partial L}{\partial V_q}$ calculated across Query heads reduce onto the shared KV heads via sum reduction across the group:
 
 $$\frac{\partial L}{\partial K_k} = \sum_{g=0}^{G-1} \frac{\partial L}{\partial K_{k \cdot G + g}}, \quad \frac{\partial L}{\partial V_k} = \sum_{g=0}^{G-1} \frac{\partial L}{\partial V_{k \cdot G + g}}$$
 
 ---
 
-## 5. まとめ：GPT-2からniwa-lmへの構造進化
+## 5. Summary: Evolution from GPT-2 to oniwa-lm
 
-| 項目 | GPT-2 (`llm.c`) | Modern (`niwa-lm`) | Rust実装時のポイント |
+| Primitive | GPT-2 (`llm.c`) | Modern (`oniwa-lm`) | Implementation Highlights in Pure Rust |
 | :--- | :--- | :--- | :--- |
-| **Normalizer** | LayerNorm | **RMSNorm** | 逆伝播の計算パスが単純化され、キャッシュ局所性が向上 |
-| **Positional Encoding** | Absolute (WPE) | **RoPE** | 埋め込みテーブル不要、インプレース逆回転で完結 |
-| **Feed-Forward** | 2-layer MLP (GELU) | **SwiGLU (Gate+Up+Down)** | 中間バッファが1本増えるが、シグモイド計算をSIMD化しやすい |
-| **Attention** | MHA | **GQA** | KVメモリを劇的に節約し、小規模ハードウェアでの学習に有利 |
-| **Bias項** | 全Linear/Normにあり | **No Bias（バイアス全廃）** | パラメータ数とBackwardループを大幅に削減（現代の主流） |
+| **Normalizer** | LayerNorm | **RMSNorm** | Simplified backward compute path; enhanced cache locality |
+| **Positional Encoding** | Absolute (WPE) | **RoPE** | Zero parameter embedding table; in-place reverse rotation |
+| **Feed-Forward** | 2-layer MLP (GELU) | **SwiGLU (Gate+Up+Down)** | Superior expressivity; vectorized sigmoid activations |
+| **Attention** | MHA | **GQA** | Drastically reduces KV memory traffic on edge CPUs |
+| **Biases** | In all linears/norms | **No Bias** | Eliminates bias parameters and backward accumulation loops |

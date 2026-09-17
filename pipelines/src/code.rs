@@ -1,9 +1,9 @@
-//! オープンソース・基本アルゴリズムコード収集パイプライン
+//! Open Source Basic Algorithm Code Ingestion Pipeline
 //!
 //! ONIWA: Organic Non-datacenter Intelligence Without Abuse
-//! クリーンなオープンソースライセンス（MIT / Apache-2.0 / CC0）に基づく
-//! 基本アルゴリズム・データ構造のPythonおよびRustコードを取得・正規化し、
-//! 小さな知性（oniwa-v2）のプログラミング構文・推論能力を育成するための土壌として系譜台帳に記録します。
+//! Retrieves and cleanses basic algorithm and data structure code in Python and Rust
+//! under clean open-source licenses (MIT / Apache-2.0 / CC0),
+//! recording full provenance to cultivate code syntax and reasoning capabilities.
 
 use oniwa_lm::logger::{DataIngestionLog, ProvenanceEvent, ProvenanceLedger};
 use oniwa_lm::reproducibility::compute_checksum_bytes;
@@ -31,7 +31,7 @@ pub const DEFAULT_CODE_TARGETS: &[CodeSnippetTarget] = &[
         title: "Python: Fibonacci Sequence",
         language: "python",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "フィボナッチ数列の再帰および動的計画法による計算",
+        description: "Fibonacci sequence calculation via recursion and dynamic programming",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Python/master/maths/fibonacci.py"),
         seed_code: r#"def fibonacci_recursive(n: int) -> int:
     """Return the nth Fibonacci number using recursion."""
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         title: "Python: Factorial Calculation",
         language: "python",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "階乗の再帰およびループ計算",
+        description: "Factorial calculation via recursion and loops",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Python/master/maths/factorial.py"),
         seed_code: r#"def factorial_iterative(n: int) -> int:
     """Compute n! iteratively."""
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         title: "Python: Binary Search Algorithm",
         language: "python",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "ソート済み配列に対する二分探索",
+        description: "Binary search on sorted arrays",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Python/master/searches/binary_search.py"),
         seed_code: r#"def binary_search(array: list[int], target: int) -> int:
     """Return index of target in sorted array, or -1 if not found."""
@@ -125,7 +125,7 @@ if __name__ == "__main__":
         title: "Python: Bubble Sort",
         language: "python",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "バブルソートによる昇順整列アルゴリズム",
+        description: "Bubble sort ascending sorting algorithm",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Python/master/sorts/bubble_sort.py"),
         seed_code: r#"def bubble_sort(array: list[int]) -> list[int]:
     """Sort a list in ascending order using bubble sort."""
@@ -151,7 +151,7 @@ if __name__ == "__main__":
         title: "Python: Greatest Common Divisor & LCM",
         language: "python",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "ユークリッドの互除法による最大公約数・最小公倍数計算",
+        description: "Greatest common divisor and least common multiple via Euclidean algorithm",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Python/master/maths/greatest_common_divisor.py"),
         seed_code: r#"def gcd(a: int, b: int) -> int:
     """Calculate greatest common divisor using Euclidean algorithm."""
@@ -177,7 +177,7 @@ if __name__ == "__main__":
         title: "Python: Prime Check & Sieve of Eratosthenes",
         language: "python",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "素数判定およびエラトステネスの篩による素数列挙",
+        description: "Primality test and Sieve of Eratosthenes prime generation",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Python/master/maths/prime_check.py"),
         seed_code: r#"def is_prime(n: int) -> bool:
     """Check if an integer is prime."""
@@ -219,7 +219,7 @@ if __name__ == "__main__":
         title: "Python: Stack & Queue Data Structures",
         language: "python",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "リストとデックを用いたスタック・キュー構造の実装",
+        description: "Stack and Queue data structures implementation using list and deque",
         url: None,
         seed_code: r#"class Stack:
     """LIFO Stack data structure."""
@@ -263,7 +263,7 @@ if __name__ == "__main__":
         title: "Rust: Fibonacci Sequence",
         language: "rust",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "Rustによるイテレータおよび再帰フィボナッチ実装",
+        description: "Fibonacci implementation in Rust using iterators and recursion",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Rust/master/src/math/fibonacci.rs"),
         seed_code: r#"pub fn fibonacci_recursive(n: u32) -> u64 {
     match n {
@@ -302,7 +302,7 @@ mod tests {
         title: "Rust: Binary Search",
         language: "rust",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "Rustスライスに対する汎用二分探索",
+        description: "Generic binary search on Rust slices",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Rust/master/src/searching/binary_search.rs"),
         seed_code: r#"pub fn binary_search<T: Ord>(slice: &[T], target: &T) -> Option<usize> {
     let mut low = 0;
@@ -339,7 +339,7 @@ mod tests {
         title: "Rust: Bubble Sort",
         language: "rust",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "Rustによるインプレース・バブルソート",
+        description: "In-place bubble sort in Rust",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Rust/master/src/sorting/bubble_sort.rs"),
         seed_code: r#"pub fn bubble_sort<T: Ord>(slice: &mut [T]) {
     let len = slice.len();
@@ -375,7 +375,7 @@ mod tests {
         title: "Rust: Greatest Common Divisor",
         language: "rust",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "ユークリッドの互除法による最大公約数",
+        description: "Greatest common divisor via Euclidean algorithm in Rust",
         url: Some("https://raw.githubusercontent.com/TheAlgorithms/Rust/master/src/math/greatest_common_divisor.rs"),
         seed_code: r#"pub fn gcd(mut a: u64, mut b: u64) -> u64 {
     while b != 0 {
@@ -411,7 +411,7 @@ mod tests {
         title: "Rust: Generic Stack",
         language: "rust",
         license: "MIT / CC0 (Clean Algorithm Implementation)",
-        description: "Vecをラップしたジェネリックスタック構造体",
+        description: "Generic Stack struct wrapping Vec in Rust",
         url: None,
         seed_code: r#"#[derive(Debug, Default)]
 pub struct Stack<T> {
@@ -495,7 +495,7 @@ impl CodePipeline {
         self.force_download = force;
     }
 
-    /// 単一のコードターゲットを取得またはシードから展開
+    /// Retrieve a single code target or deploy from embedded seeds
     pub fn fetch_or_seed(
         &self,
         target: &CodeSnippetTarget,
@@ -508,16 +508,16 @@ impl CodePipeline {
         let raw_filename = format!("code_{}.{}", target.name, ext);
         let raw_path = self.raw_dir.join(&raw_filename);
 
-        // キャッシュが存在し、force_downloadでなければキャッシュを利用
+        // Use cache if available unless force_download is set
         if !self.force_download && raw_path.exists() && raw_path.metadata()?.len() > 0 {
             let content = fs::read_to_string(&raw_path)?;
             let sha = compute_checksum_bytes(content.as_bytes());
             return Ok((content, sha));
         }
 
-        // URL指定があればダウンロードを試行
+        // Attempt download if URL is provided
         if let Some(url) = target.url {
-            println!("  📥 [Code] ダウンロード試行: 『{}』 ...", target.title);
+            println!("  📥 [Code] Attempting download: \"{}\" ...", target.title);
             let user_agent =
                 "oniwa-pipeline/0.1.0 (Ethical Open Source Code Ingestion; Educational AI)";
             let status = Command::new("curl")
@@ -525,7 +525,7 @@ impl CodePipeline {
                 .arg("-f")
                 .arg("-L")
                 .arg("-m")
-                .arg("5") // タイムアウト5秒
+                .arg("5") // 5-second timeout
                 .arg("-A")
                 .arg(user_agent)
                 .arg("-o")
@@ -542,25 +542,25 @@ impl CodePipeline {
                 }
             }
             println!(
-                "  ⚠️ ダウンロード失敗またはタイムアウト。高品質シードコードを展開します: 『{}』",
+                "  ⚠️ Download failed or timed out. Deploying high-quality seed code: \"{}\"",
                 target.title
             );
         }
 
-        // フォールバック: シードコードの書き出し
+        // Fallback: write seed code
         fs::write(&raw_path, target.seed_code.as_bytes())?;
         let sha = compute_checksum_bytes(target.seed_code.as_bytes());
         Ok((target.seed_code.to_string(), sha))
     }
 
-    /// 単一コードを前処理してコーパスに保存し、監査台帳に記録
+    /// Preprocess single code file, save to corpus, and log to provenance ledger
     pub fn ingest_single_code(
         &self,
         target: &CodeSnippetTarget,
     ) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let (raw_content, raw_sha) = self.fetch_or_seed(target)?;
 
-        // コードのクレンジング & 正規化
+        // Code cleansing and normalization
         let cleaned_code = clean_code(&raw_content, target.language);
 
         let out_filename = format!("code_{}.txt", target.name);
@@ -571,7 +571,7 @@ impl CodePipeline {
         let char_count = cleaned_code.chars().count();
 
         println!(
-            "  💻 コード保存完了: 『{}』 ({}, {}文字 / {:.2} KB)",
+            "  💻 Saved code: \"{}\" ({}, {} characters / {:.2} KB)",
             target.title,
             target.language,
             char_count,
@@ -583,7 +583,7 @@ impl CodePipeline {
 
         ledger.record(&ProvenanceEvent::DataIngestion(DataIngestionLog {
             timestamp_utc: oniwa_lm::logger::current_timestamp_utc(),
-            source_name: format!("CleanCode: 『{}』 ({})", target.title, target.language),
+            source_name: format!("CleanCode: \"{}\" ({})", target.title, target.language),
             source_url_or_path: target.url.unwrap_or("builtin-seed").to_string(),
             license: target.license.to_string(),
             raw_data_sha256: raw_sha,
@@ -597,17 +597,17 @@ impl CodePipeline {
         Ok(out_path)
     }
 
-    /// デフォルトのコード群を一括取得
+    /// Batch ingest default code targets
     pub fn ingest_default_code(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
         println!("============================================================");
-        println!(" 💻 オープンソース基本アルゴリズムコード（Python/Rust）一括収集");
-        println!("    (根拠: MIT / Apache-2.0 / CC0 オープンライセンス)");
+        println!(" 💻 Open-Source Basic Algorithm Code Ingestion (Python/Rust)");
+        println!("    (Source: MIT / Apache-2.0 / CC0 Open Licenses)");
         println!("============================================================");
 
         let mut paths = Vec::new();
         for target in DEFAULT_CODE_TARGETS {
             println!(
-                "▶ 『{}』 [{}]: {}",
+                "▶ \"{}\" [{}]: {}",
                 target.title, target.language, target.description
             );
             let path = self.ingest_single_code(target)?;
@@ -618,16 +618,16 @@ impl CodePipeline {
     }
 }
 
-/// コードの正規化・クレンジング処理
-/// - 行末スペースの削除
-/// - タブ文字を4スペースへ置換
-/// - 連続する3行以上の空行を2行に圧縮
+/// Code normalization and cleansing process
+/// - Trim trailing whitespace
+/// - Replace tabs with 4 spaces
+/// - Compress 3+ consecutive empty lines to 2 empty lines
 pub fn clean_code(raw_code: &str, _language: &str) -> String {
     let mut cleaned_lines: Vec<String> = Vec::new();
     let mut consecutive_empty_lines = 0;
 
     for line in raw_code.lines() {
-        // タブを4空白に正規化し、末尾空白をトリム
+        // Normalize tabs to 4 spaces and trim trailing whitespace
         let expanded = line.replace('\t', "    ");
         let trimmed_end = expanded.trim_end();
 
@@ -657,11 +657,11 @@ mod tests {
         let cleaned = clean_code(raw, "python");
         assert!(cleaned.contains("    print(\"hello\")"));
         assert!(cleaned.contains("    return 42"));
-        // 行末空白がないこと
+        // Verify no trailing whitespace
         for line in cleaned.lines() {
             assert_eq!(line, line.trim_end());
         }
-        // 連続空行が2行以内に制限されていること
+        // Verify consecutive empty lines are capped at 2
         assert!(!cleaned.contains("\n\n\n\n"));
     }
 

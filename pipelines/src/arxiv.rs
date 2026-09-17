@@ -1,10 +1,9 @@
-//! arXiv オープンサイエンス論文アブストラクト収集パイプライン
+//! arXiv Open Science Paper Abstract Ingestion Pipeline
 //!
 //! ONIWA: Organic Non-datacenter Intelligence Without Abuse
-//! 公式 arXiv API (https://arxiv.org/help/api) を通じて、
-//! コンピュータサイエンス・人工知能（cs.AI / cs.CL / cs.LG 等）のオープンアクセス論文
-//! （CC-BY / オープンライセンス）のタイトル・要約・著者情報を取得・クレンジングし、
-//! 将来の学術的・英語コンテキスト学習のためのクリーンな土壌として系譜台帳に記録します。
+//! Retrieves and cleanses open-access paper abstracts, titles, and authors in Computer Science
+//! and AI (cs.AI, cs.CL, cs.LG, etc.) via official arXiv API (CC-BY / open licenses),
+//! recording full provenance as clean data for academic learning.
 
 use oniwa_lm::logger::{DataIngestionLog, ProvenanceEvent, ProvenanceLedger};
 use oniwa_lm::reproducibility::compute_checksum_bytes;
@@ -55,7 +54,7 @@ impl ArxivPipeline {
         self.force_download = force;
     }
 
-    /// arXiv API から指定カテゴリ・件数の論文フィード (Atom XML) を取得
+    /// Retrieve paper feed (Atom XML) from arXiv API for given category and limit
     pub fn fetch_feed_xml(
         &self,
         category: &str,
@@ -75,7 +74,7 @@ impl ArxivPipeline {
             category, max_results
         );
         println!(
-            "  📥 [arXiv API] 論文フィード取得中: {} (最大 {} 件) ...",
+            "  📥 [arXiv API] Fetching paper feed: {} (max {} papers) ...",
             category, max_results
         );
 
@@ -93,15 +92,15 @@ impl ArxivPipeline {
             .status()?;
 
         if !status.success() {
-            return Err(format!("arXiv API リクエスト失敗: {}", url).into());
+            return Err(format!("arXiv API request failed: {}", url).into());
         }
 
-        // arXiv API 利用規約遵守: リクエスト間隔を確保 (最低3秒推奨)
+        // Comply with arXiv API terms: enforce request interval (recommended >= 3s)
         sleep(Duration::from_millis(3000));
         Ok(dest_path)
     }
 
-    /// フィード XML をパースして各論文をクレンジング、個別コーパスファイルに保存
+    /// Parse feed XML, cleanse paper text, and save to individual corpus files
     pub fn ingest_category(
         &self,
         category: &str,
@@ -109,10 +108,10 @@ impl ArxivPipeline {
     ) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
         println!("============================================================");
         println!(
-            " 🔬 arXiv オープンアクセス論文収集: カテゴリ「{}」 (最大 {} 件)",
+            " 🔬 arXiv Open Access Paper Ingestion: category \"{}\" (max {} papers)",
             category, max_results
         );
-        println!("    (根拠: arXiv.org API / オープンサイエンス・CCライセンス)");
+        println!("    (Source: arXiv.org API / Open Science CC License)");
         println!("============================================================");
 
         let xml_path = self.fetch_feed_xml(category, max_results)?;
@@ -120,7 +119,7 @@ impl ArxivPipeline {
         let xml_content = String::from_utf8_lossy(&xml_bytes);
 
         let entries = parse_arxiv_atom(&xml_content);
-        println!("  - 取得できた論文エントリー: {} 件", entries.len());
+        println!("  - Ingested paper entries: {}", entries.len());
 
         let ledger_path = self.logs_dir.join("ledger_index.jsonl");
         let mut ledger = ProvenanceLedger::open(&ledger_path)?;
@@ -153,7 +152,7 @@ impl ArxivPipeline {
 
             ledger.record(&ProvenanceEvent::DataIngestion(DataIngestionLog {
                 timestamp_utc: oniwa_lm::logger::current_timestamp_utc(),
-                source_name: format!("arXiv: 『{}』", entry.title),
+                source_name: format!("arXiv: \"{}\"", entry.title),
                 source_url_or_path: entry.id.clone(),
                 license: "Open Access (arXiv API / CC-BY or Non-Exclusive License)".to_string(),
                 raw_data_sha256: raw_sha256.clone(),
@@ -164,7 +163,10 @@ impl ArxivPipeline {
                 tokenizer_type: "Raw Cleaned Text (arXiv Atom XML)".to_string(),
             }))?;
 
-            println!("  📄 保存完了: 『{}』({} 文字)", entry.title, char_count);
+            println!(
+                "  📄 Saved: \"{}\" ({} characters)",
+                entry.title, char_count
+            );
             paths.push(out_path);
         }
 
@@ -172,7 +174,7 @@ impl ArxivPipeline {
     }
 }
 
-/// Atom XML から各 <entry> を抽出
+/// Extract each <entry> from Atom XML
 pub fn parse_arxiv_atom(xml: &str) -> Vec<ArxivEntry> {
     let mut entries = Vec::new();
     let mut current_pos = 0;

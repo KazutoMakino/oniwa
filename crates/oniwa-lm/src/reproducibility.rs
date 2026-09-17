@@ -1,20 +1,20 @@
-//! 完璧な再現性を担保するための決定論的乱数生成とハッシュチェックサム
+//! Deterministic random number generation and hash checksums for perfect reproducibility.
 
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use sha2::{Digest, Sha256};
 
-/// 確定論的乱数ジェネレータ
+/// Deterministic random number generator.
 ///
-/// x86_64、ARM64 (Raspberry Pi)、その他どのアーキテクチャで実行しても
-/// 同じシード値からはビット単位で全く同一の乱数列を生成することを保証します。
+/// Guarantees bit-for-bit identical pseudo-random sequences from the same seed
+/// across x86_64, ARM64 (Raspberry Pi), and any other supported architectures.
 pub struct DeterministicRng {
     rng: ChaCha8Rng,
     seed: u64,
 }
 
 impl DeterministicRng {
-    /// 64-bit シードから決定論的 RNG を初期化
+    /// Initialize deterministic RNG from a 64-bit seed.
     pub fn new(seed: u64) -> Self {
         Self {
             rng: ChaCha8Rng::seed_from_u64(seed),
@@ -26,13 +26,13 @@ impl DeterministicRng {
         self.seed
     }
 
-    /// [0, 1) の一様分布 f32 を生成
+    /// Generate uniform random f32 in [0, 1).
     pub fn next_f32(&mut self) -> f32 {
         let val = self.rng.next_u32() >> 8; // 24 bits
         (val as f32) / (16777216.0f32)
     }
 
-    /// 平均 0, 標準偏差 std の正規分布乱数を生成 (Box-Muller変換)
+    /// Generate standard normal random variable with mean and std (Box-Muller transform).
     pub fn next_gaussian(&mut self, mean: f32, std: f32) -> f32 {
         let mut u1 = self.next_f32();
         while u1 <= 1e-7f32 {
@@ -44,7 +44,7 @@ impl DeterministicRng {
         mean + z0 * std
     }
 
-    /// スライス全体を指定した標準偏差の正規分布で初期化
+    /// Fill an entire slice with normally distributed values of specified standard deviation.
     pub fn fill_gaussian(&mut self, dest: &mut [f32], mean: f32, std: f32) {
         for x in dest.iter_mut() {
             *x = self.next_gaussian(mean, std);
@@ -52,9 +52,9 @@ impl DeterministicRng {
     }
 }
 
-/// 浮動小数点スライス（重みや活性化値）の SHA-256 チェックサムを算出
+/// Compute SHA-256 checksum of a floating point slice (weights or activations).
 ///
-/// プラットフォーム間のエンディアン差異を防ぐため、常にリトルエンディアンバイト列としてハッシュ化します。
+/// Always hashed as little-endian bytes to ensure cross-platform endian consistency.
 pub fn compute_checksum_f32(data: &[f32]) -> String {
     let mut hasher = Sha256::new();
     for &val in data {
@@ -63,7 +63,7 @@ pub fn compute_checksum_f32(data: &[f32]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// 生バイト列（データセットファイルなど）の SHA-256 チェックサムを算出
+/// Compute SHA-256 checksum of raw bytes (dataset files, etc.).
 pub fn compute_checksum_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn test_deterministic_reproducibility() {
-        // 同一シードから生成した乱数列と重みチェックサムが完全一致することを検証
+        // Verify random sequences and weight checksums match identically from same seed
         let seed = 42u64;
 
         let mut rng1 = DeterministicRng::new(seed);
@@ -89,11 +89,11 @@ mod tests {
         rng2.fill_gaussian(&mut weights2, 0.0, 0.02);
         let checksum2 = compute_checksum_f32(&weights2);
 
-        // ビット単位で完全一致
+        // Bit-for-bit identical match
         assert_eq!(weights1, weights2);
         assert_eq!(checksum1, checksum2);
 
-        // 異なるシードでは一致しないことを検証
+        // Verify different seeds produce different checksums
         let mut rng3 = DeterministicRng::new(seed + 1);
         let mut weights3 = vec![0.0f32; 1000];
         rng3.fill_gaussian(&mut weights3, 0.0, 0.02);

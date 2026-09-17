@@ -24,9 +24,9 @@ pub mod reproducibility;
 pub mod thermal;
 pub mod tokenizer;
 
-/// ワークスペースのルートディレクトリ（data/, logs/, Cargo.toml がある階層）を自動探索します。
+/// Automatically discovers the workspace root directory (containing data/, logs/, Cargo.toml).
 pub fn find_workspace_root() -> std::path::PathBuf {
-    // 1. カレントディレクトリまたはその親を走査
+    // 1. Traverse current directory and its ancestors
     if let Ok(mut dir) = std::env::current_dir() {
         loop {
             if dir.join("Cargo.toml").exists() && dir.join("data").is_dir() {
@@ -37,7 +37,7 @@ pub fn find_workspace_root() -> std::path::PathBuf {
             }
         }
     }
-    // 2. CARGO_MANIFEST_DIR の親を走査
+    // 2. Traverse CARGO_MANIFEST_DIR and its ancestors
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut dir = manifest_dir.to_path_buf();
     loop {
@@ -48,6 +48,6 @@ pub fn find_workspace_root() -> std::path::PathBuf {
             break;
         }
     }
-    // 3. フォールバック
+    // 3. Fallback
     manifest_dir.to_path_buf()
 }

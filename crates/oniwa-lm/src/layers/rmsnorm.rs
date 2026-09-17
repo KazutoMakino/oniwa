@@ -1,24 +1,24 @@
 //! RMSNorm (Root Mean Square Normalization)
 //!
-//! 順伝播数式:
+//! Forward pass formula:
 //!   RMS(x) = sqrt( mean(x^2) + eps )
 //!   x_hat = x / RMS(x)
 //!   y = x_hat * weight
 //!
-//! 逆伝播数式:
+//! Backward pass formula:
 //!   dweight = sum( dout * x_hat )
 //!   dx = (1 / RMS(x)) * [ weight * dout - (x_hat / d) * sum(dout * weight * x_hat) ]
 
 pub struct RMSNorm;
 
 impl RMSNorm {
-    /// 順伝播
+    /// Forward pass
     ///
-    /// - `out`: 出力バッファ [N, D]
-    /// - `rstd`: 逆伝播用キャッシュ (1 / RMS(x)) [N]
-    /// - `inp`: 入力テンソル [N, D]
-    /// - `weight`: 重みパラメータ [D]
-    /// - `eps`: ゼロ除算防止用イプシロン
+    /// - `out`: Output buffer [N, D]
+    /// - `rstd`: Cache for backward pass (1 / RMS(x)) [N]
+    /// - `inp`: Input tensor [N, D]
+    /// - `weight`: Weight parameter [D]
+    /// - `eps`: Epsilon for numerical stability
     pub fn forward(
         out: &mut [f32],
         rstd: &mut [f32],
@@ -37,32 +37,32 @@ impl RMSNorm {
             let inp_row = &inp[offset..offset + d];
             let out_row = &mut out[offset..offset + d];
 
-            // 1. 二乗和の計算
+            // 1. Sum of squares
             let mut sum_sq = 0.0f32;
             for &x in inp_row {
                 sum_sq += x * x;
             }
 
-            // 2. RMSの逆数 (rstd = 1 / sqrt(mean + eps))
+            // 2. Reciprocal of RMS (rstd = 1 / sqrt(mean + eps))
             let mean_sq = sum_sq / (d as f32);
             let r = 1.0f32 / (mean_sq + eps).sqrt();
             *r_out = r;
 
-            // 3. 正規化とスケーリング: out = (x * r) * weight
+            // 3. Normalize and scale: out = (x * r) * weight
             for i in 0..d {
                 out_row[i] = inp_row[i] * r * weight[i];
             }
         }
     }
 
-    /// 逆伝播
+    /// Backward pass
     ///
-    /// - `dinp`: 入力勾配バッファ [N, D] (加算・累積)
-    /// - `dweight`: 重み勾配バッファ [D] (加算・累積)
-    /// - `dout`: 上流からの出力勾配 [N, D]
-    /// - `inp`: 順伝播時の入力 [N, D]
-    /// - `rstd`: 順伝播時に保存したキャッシュ [N]
-    /// - `weight`: 重みパラメータ [D]
+    /// - `dinp`: Input gradient buffer [N, D] (accumulated)
+    /// - `dweight`: Weight gradient buffer [D] (accumulated)
+    /// - `dout`: Upstream output gradient [N, D]
+    /// - `inp`: Input from forward pass [N, D]
+    /// - `rstd`: Saved cache from forward pass [N]
+    /// - `weight`: Weight parameter [D]
     pub fn backward(
         dinp: &mut [f32],
         dweight: &mut [f32],
@@ -85,16 +85,16 @@ impl RMSNorm {
             let dout_row = &dout[offset..offset + d];
             let dinp_row = &mut dinp[offset..offset + d];
 
-            // 内積 S = sum( dout * weight * x_hat )
+            // Inner product S = sum( dout * weight * x_hat )
             let mut s = 0.0f32;
             for i in 0..d {
                 let x_hat = inp_row[i] * r;
                 s += dout_row[i] * weight[i] * x_hat;
-                // 重み勾配の蓄積
+                // Accumulate weight gradient
                 dweight[i] += dout_row[i] * x_hat;
             }
 
-            // 入力勾配 dx = r * [ weight * dout - (x_hat / d) * S ]
+            // Input gradient dx = r * [ weight * dout - (x_hat / d) * S ]
             let factor = s / (d as f32);
             for i in 0..d {
                 let x_hat = inp_row[i] * r;
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_rmsnorm_gradcheck() {
-        // 数値微分 (Finite Differences) と解析的微分の比較テスト
+        // Finite Differences vs Analytic Gradient comparison test
         let d = 4;
         let n = 2;
         let eps = 1e-5f32;
@@ -127,10 +127,10 @@ mod tests {
         let mut dweight = vec![0.0; d];
         RMSNorm::backward(&mut dinp, &mut dweight, &dout, &inp, &rstd, &weight, d);
 
-        // 目的関数: L = sum(out * dout)
+        // Objective: L = sum(out * dout)
         let delta = 1e-3f32;
 
-        // 1. 入力勾配 dinp の数値チェック
+        // 1. Numerical check for input gradient dinp
         for i in 0..(n * d) {
             let mut inp_plus = inp.clone();
             let mut inp_minus = inp.clone();
@@ -158,7 +158,7 @@ mod tests {
             );
         }
 
-        // 2. 重み勾配 dweight の数値チェック
+        // 2. Numerical check for weight gradient dweight
         for i in 0..d {
             let mut w_plus = weight.clone();
             let mut w_minus = weight.clone();

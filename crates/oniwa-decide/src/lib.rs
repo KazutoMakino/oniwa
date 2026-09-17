@@ -1,11 +1,11 @@
 //! # oniwa-decide
 //!
 //! 🌿 ONIWA: Organic Non-datacenter Intelligence Without Abuse
-//! TypeSafe AI「Jev」の System One 哲学に着想を得た、ピュアRust製 型安全意思決定エンジン。
+//! Pure-Rust TypeSafe decision engine inspired by the System One philosophy of TypeSafe AI.
 //!
-//! 自然言語やコードを単一フォワードパス（ミリ秒単位）で読み取り、
-//! 自由な文章生成（自己回帰）を行わずに、プログラムが直接実行できる「型付けされた決定（Typed Decisions）」と
-//! 較正された確信度（Calibrated Confidence）を出力します。
+//! Ingests natural language or code in a single forward pass (sub-millisecond latency)
+//! and outputs directly executable typed decisions and calibrated confidence values,
+//! without requiring free-form autoregressive text generation.
 
 pub mod dataset;
 pub mod layers;
@@ -19,7 +19,7 @@ use oniwa_lm::tokenizer::CharTokenizer;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// 選択決定プリミティブ (Jev 互換)
+/// Categorical choice decision primitive
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Choice<T> {
     pub value: T,
@@ -27,7 +27,7 @@ pub struct Choice<T> {
     pub confidence: f32,
 }
 
-/// 真偽確率決定プリミティブ (Jev 互換)
+/// Binary truth probability decision primitive
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Noul {
     pub value: bool,
@@ -35,14 +35,14 @@ pub struct Noul {
     pub confidence: f32,
 }
 
-/// 連続数値評価プリミティブ (Jev 互換)
+/// Continuous score decision primitive
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Score {
     pub value: f32,
     pub confidence: f32,
 }
 
-/// コード＆ドキュメント型安全監査の決定結果
+/// Result of type-safe audit decision on code or documentation
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuditDecision {
     pub category: Choice<DocCategory>,
@@ -51,7 +51,7 @@ pub struct AuditDecision {
     pub inference_time_ms: u128,
 }
 
-/// 高レベル決定エンジン
+/// High-level decision engine
 pub struct DecisionEngine {
     pub model: DecisionModel,
     pub tokenizer: CharTokenizer,
@@ -62,7 +62,7 @@ impl DecisionEngine {
         Self { model, tokenizer }
     }
 
-    /// チェックポイントから読み込み
+    /// Load model and configuration from a checkpoint directory
     pub fn load_from_dir<P: AsRef<Path>>(
         checkpoint_dir: P,
         tokenizer: CharTokenizer,
@@ -78,7 +78,7 @@ impl DecisionEngine {
         Ok(Self { model, tokenizer })
     }
 
-    /// テキストの型安全監査推論（単一フォワードパス）
+    /// Run type-safe audit inference on text in a single forward pass
     pub fn audit_text(&self, text: &str) -> AuditDecision {
         let start = std::time::Instant::now();
         let tokens = self.tokenizer.encode(text);

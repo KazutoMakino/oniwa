@@ -1,7 +1,7 @@
-//! oniwa-lm 対話チャット機能（Interactive REPL）
+//! oniwa-lm Interactive Chat REPL
 //!
-//! 学習したチェックポイント（重み）を読み込み、ターミナル上で
-//! モデルとリアルタイムに対話・文章生成の実験を行うことができます。
+//! Loads a trained model checkpoint and allows real-time interactive
+//! text generation and experimentation directly in the terminal.
 
 use oniwa_lm::logger::{InferenceLog, ProvenanceEvent, ProvenanceLedger};
 use oniwa_lm::model::{ModelConfig, ModelWeights};
@@ -12,7 +12,7 @@ use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
-    println!(" 💬 ONIWA (oniwa-lm): インタラクティブ対話チャット");
+    println!(" 💬 ONIWA (oniwa-lm): Interactive Chat REPL");
     println!("============================================================\n");
 
     let workspace_root = oniwa_lm::find_workspace_root();
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let vocab_path = data_dir.join("vocab.json");
 
-    // コマンドライン引数の解析 (--checkpoint best / latest)
+    // Parse command-line arguments (--checkpoint best / latest)
     let args: Vec<String> = std::env::args().collect();
     let mut requested_checkpoint: Option<String> = None;
     let mut i = 1;
@@ -52,35 +52,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let latest_dir = base_dir.join("checkpoints").join("latest");
 
     let (checkpoint_dir, checkpoint_tag) = match requested_checkpoint.as_deref() {
-        Some("best") => (best_dir, "🏆 最良モデル (checkpoints/best)"),
-        Some("latest") => (latest_dir, "⏱️ 最新モデル (checkpoints/latest)"),
-        Some(custom) => (base_dir.join(custom), "📁 指定チェックポイント"),
+        Some("best") => (best_dir, "🏆 Best Model (checkpoints/best)"),
+        Some("latest") => (latest_dir, "⏱️ Latest Model (checkpoints/latest)"),
+        Some(custom) => (base_dir.join(custom), "📁 Custom Checkpoint"),
         None => {
             if best_dir.join("meta.json").exists() {
-                (best_dir, "🏆 最良モデル (checkpoints/best: 自動選択)")
+                (best_dir, "🏆 Best Model (checkpoints/best: auto-selected)")
             } else {
-                (latest_dir, "⏱️ 最新モデル (checkpoints/latest: 自動選択)")
+                (
+                    latest_dir,
+                    "⏱️ Latest Model (checkpoints/latest: auto-selected)",
+                )
             }
         }
     };
 
-    // 1. 語彙テーブルの読み込み
+    // 1. Load vocabulary table
     if !vocab_path.exists() {
-        eprintln!("Error: 語彙ファイル {:?} が見つかりません。", vocab_path);
-        eprintln!("まずは `cargo run --release --bin train` で学習を実行してください。");
+        eprintln!("Error: Vocabulary file {:?} not found.", vocab_path);
+        eprintln!("Please run training first with `cargo run --release --bin train`.");
         return Ok(());
     }
     let tokenizer = CharTokenizer::load_vocab(&vocab_path)?;
-    println!("  - 語彙サイズ: {} 文字", tokenizer.vocab_size());
+    println!("  - Vocab size: {} characters", tokenizer.vocab_size());
 
-    // 2. チェックポイントの読み込み
+    // 2. Load checkpoint
     if !checkpoint_dir.join("meta.json").exists() {
         eprintln!(
-            "Error: チェックポイント {:?} が見つかりません。",
+            "Error: Checkpoint directory {:?} not found.",
             checkpoint_dir
         );
         eprintln!(
-            "まずは `cargo run --release --bin train` で学習を実行してモデルを保存してください。"
+            "Please run training first with `cargo run --release --bin train` to save a model checkpoint."
         );
         return Ok(());
     }
@@ -101,24 +104,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut model = ModelWeights::new(config.clone(), &mut rng);
 
     println!(
-        "  🔄 チェックポイントをロード中: {} ({:?})",
+        "  🔄 Loading checkpoint: {} ({:?})",
         checkpoint_tag, checkpoint_dir
     );
-    println!("  - モデル仕様: 文脈長 {}, 隠れ層 {}次元, レイヤー数 {}, 語彙数 {}, パラメータ数 {} (約 {:.2} M params)",
+    println!("  - Model specs: seq_len {}, dim {}, num_layers {}, vocab_size {}, params {} (~{:.2} M params)",
         config.seq_len, config.dim, config.num_layers, config.vocab_size, model.params.len(), model.params.len() as f32 / 1_000_000.0);
     let (step, loss, _) = model.load_checkpoint(&checkpoint_dir)?;
     let model_checksum = compute_checksum_f32(&model.params);
-    println!("  ✅ ロード完了！ (Step: {}, 損失: {:.4})", step, loss);
-    println!("  - モデル重み SHA-256: {}...\n", &model_checksum[..16]);
+    println!(
+        "  ✅ Loaded successfully! (Step: {}, Loss: {:.4})",
+        step, loss
+    );
+    println!("  - Model weights SHA-256: {}...\n", &model_checksum[..16]);
 
-    // 3. 監査ログ台帳
+    // 3. Audit log ledger
     let mut ledger = ProvenanceLedger::open(logs_dir.join("ledger_index.jsonl"))?;
 
     println!("------------------------------------------------------------");
-    println!(" 【使い方】");
-    println!("  ・冒頭の言葉や問いかけを入力して [Enter] を押してください。");
-    println!("  ・モデルがそれに続く文章を自己回帰的に生成します。");
-    println!("  ・終了するには 'quit' または 'exit' と入力してください。");
+    println!(" [Usage]");
+    println!("  - Enter a prompt or question and press [Enter].");
+    println!("  - The model will autoregressively generate continuing text.");
+    println!("  - Type 'quit' or 'exit' to quit.");
     println!("------------------------------------------------------------\n");
 
     let stdin = io::stdin();
@@ -137,7 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
         if prompt == "quit" || prompt == "exit" {
-            println!("終了します。家庭菜園のお手入れお疲れ様でした！🌱");
+            println!("Exiting. Thank you for cultivating the garden! 🌱");
             break;
         }
 
@@ -157,7 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("\noniwa-lm > {}\n", generated_text);
 
-        // 推論イベントを系譜台帳に記録
+        // Record inference event in provenance ledger
         let _ = ledger.record(&ProvenanceEvent::Inference(InferenceLog {
             timestamp_utc: oniwa_lm::logger::current_timestamp_utc(),
             prompt: prompt.to_string(),
@@ -174,7 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// プロンプトから指定文字数を Transformer 自己回帰生成
+/// Autoregressively generate specified number of tokens from prompt
 fn generate_response(
     model: &ModelWeights,
     tokenizer: &CharTokenizer,
@@ -184,10 +190,10 @@ fn generate_response(
     rng: &mut DeterministicRng,
 ) -> String {
     let mut tokens = tokenizer.encode(prompt);
-    // モデルの語彙数範囲内に制限（新旧語彙差分の安全防御）
+    // Restrict to vocabulary size (safety guard for vocab differences)
     tokens.retain(|&id| (id as usize) < model.config.vocab_size);
     if tokens.is_empty() {
-        // 未知文字ばかりの場合は先頭トークンを使用
+        // Fallback to token 0 if all characters are unknown
         tokens.push(0);
     }
     let seq_len = model.config.seq_len;
@@ -208,7 +214,7 @@ fn generate_response(
             *val /= sum_exp;
         }
 
-        // サンプリング
+        // Sampling
         let r = rng.next_f32();
         let mut acc = 0.0f32;
         let mut next_token = 0;

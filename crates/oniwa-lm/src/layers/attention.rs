@@ -1,17 +1,17 @@
-//! 因果マルチヘッド自己注意層 (Causal Multi-Head Self-Attention with RoPE)
+//! Causal Multi-Head Self-Attention with RoPE
 //!
-//! - 入力: X [B, T, C]
-//! - 射影: QKV = X * W_qkv [C, 3*C]
-//! - RoPE: 位置に応じた回転埋め込み
-//! - 因果注意: Attn = Softmax(Mask(Q * K^T / sqrt(D_h))) * V
-//! - 出力射影: Y = Attn * W_proj [C, C]
+//! - Input: X [B, T, C]
+//! - Projection: QKV = X * W_qkv [C, 3*C]
+//! - RoPE: Rotary Position Embedding based on token position
+//! - Causal Attention: Attn = Softmax(Mask(Q * K^T / sqrt(D_h))) * V
+//! - Output Projection: Y = Attn * W_proj [C, C]
 
 pub struct CausalSelfAttention;
 
 impl CausalSelfAttention {
-    /// RoPE (Rotary Position Embedding) 順伝播 & 逆伝播
+    /// RoPE (Rotary Position Embedding) forward & backward pass
     ///
-    /// 逆伝播では angle を -angle にするだけで逆回転となる。
+    /// In the backward pass, simply negating angle reverses the rotation.
     pub fn apply_rope(vec: &mut [f32], b: usize, t: usize, nh: usize, d_h: usize, inverse: bool) {
         let sign = if inverse { -1.0f32 } else { 1.0f32 };
         let half = d_h / 2;
@@ -38,14 +38,14 @@ impl CausalSelfAttention {
         }
     }
 
-    /// 順伝播
+    /// Forward pass
     #[allow(clippy::too_many_arguments)]
     pub fn forward(
         out: &mut [f32],
         act_q: &mut [f32],
         act_k: &mut [f32],
         act_v: &mut [f32],
-        act_att: &mut [f32],     // [B, NH, T, T] Softmax後の重み
+        act_att: &mut [f32],     // [B, NH, T, T] Softmax weights
         act_att_out: &mut [f32], // [B, T, C]
         inp: &[f32],
         w_qkv: &[f32],
@@ -59,7 +59,7 @@ impl CausalSelfAttention {
         let d_h = c / nh;
         let scale = 1.0f32 / (d_h as f32).sqrt();
 
-        // 1. QKV 射影: inp [N, C] * w_qkv [C, 3*C]
+        // 1. QKV projection: inp [N, C] * w_qkv [C, 3*C]
         for i in 0..n {
             let x_row = &inp[i * c..(i + 1) * c];
             for j in 0..c {
@@ -78,7 +78,7 @@ impl CausalSelfAttention {
             }
         }
 
-        // 2. RoPE 適用 (Q と K)
+        // 2. Apply RoPE (Q and K)
         Self::apply_rope(act_q, b, t, nh, d_h, false);
         Self::apply_rope(act_k, b, t, nh, d_h, false);
 
@@ -93,7 +93,7 @@ impl CausalSelfAttention {
 
                     let row_offset = att_offset + i * t;
 
-                    // 内積計算 (j <= i のみ)
+                    // Inner product calculation (j <= i only for causal masking)
                     let mut max_val = f32::NEG_INFINITY;
                     for j in 0..=i {
                         let k_offset = ((bi * t + j) * nh + hi) * d_h;
@@ -152,7 +152,7 @@ impl CausalSelfAttention {
         }
     }
 
-    /// 逆伝播
+    /// Backward pass
     #[allow(clippy::too_many_arguments)]
     pub fn backward(
         dinp: &mut [f32],
@@ -246,7 +246,7 @@ impl CausalSelfAttention {
             }
         }
 
-        // 3. RoPE 逆回転 (dQ と dK)
+        // 3. RoPE inverse rotation (dQ and dK)
         Self::apply_rope(&mut dq, b, t, nh, d_h, true);
         Self::apply_rope(&mut dk, b, t, nh, d_h, true);
 
@@ -341,7 +341,7 @@ mod tests {
             nh,
         );
 
-        // 数値微分チェック for inp
+        // Numerical gradient check for inp
         let eps = 1e-3f32;
         for i in 0..inp.len() {
             let mut inp_pos = inp.clone();

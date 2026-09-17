@@ -1,25 +1,25 @@
-# Phase 1: llm.c の徹底分解（解体新書）
+# Phase 1: In-Depth Deconstruction of llm.c
 
-Andrej Karpathy 氏が手掛けた `llm.c` は、「巨大なフレームワーク（PyTorch等）や動的計算グラフを完全に排除し、プレーンな C / CUDA のみで GPT-2 の学習（事前学習）を実現した」ミニマリズムの極致です。
+Andrej Karpathy's `llm.c` represents the pinnacle of minimalism: eliminating massive frameworks (PyTorch, etc.) and dynamic computational graphs entirely to realize GPT-2 pretraining using only plain C and CUDA.
 
-本ドキュメントでは、`llm.c` の核心である **「1枚バッファメモリモデル」「手動バックプロパゲーション規約」「データローダーとオプティマイザ」** を徹底的に分解し、Rustでの再設計に向けた知見を抽出します。
+This document dissects the core pillars of `llm.c`—the **Flat Buffer Memory Model**, the **Manual Autograd Convention**, and the **Data Loader and Optimizer**—to extract design insights for our Pure Rust architecture.
 
 ---
 
-## 1. 静的一括メモリモデル（The Flat Buffer Paradigm）
+## 1. The Flat Buffer Paradigm
 
-一般的な機械学習フレームワーク（PyTorch等）は、演算のたびに動的にメモリを確保・解放（または内部のアロケータキャッシュを運用）します。
-一方、`llm.c` は**「学習全体に必要なメモリを起動時にたった3つの巨大な連続領域（パラメータ、活性化値、勾配）として一括確保する」**という設計を採用しています。
+Standard machine learning frameworks (like PyTorch) dynamically allocate and free memory (or run internal allocator caches) during every tensor operation.
+In contrast, `llm.c` allocates **all memory required for the entire training process upfront at startup as exactly three massive contiguous buffers (parameters, activations, gradients)**.
 
 ```mermaid
 graph TD
-    subgraph Memory["一括確保される3大メモリバッファ"]
-        P["params_memory (全重み・バイアス)"]
-        G["grads_memory (全パラメータの勾配)"]
-        A["acts_memory (全中間活性化値)"]
+    subgraph Memory["Three Flat Memory Buffers Pre-allocated Upfront"]
+        P["params_memory (All weights and biases)"]
+        G["grads_memory (Gradients for all parameters)"]
+        A["acts_memory (All intermediate activation values)"]
     end
 
-    subgraph Layers["レイヤーへのスライス分割"]
+    subgraph Layers["Slicing Across Network Layers"]
         P --> P1["wte (Token Embeddings)"]
         P --> P2["wpe (Pos Embeddings)"]
         P --> P3["Layer 0..L Weights"]
@@ -31,16 +31,16 @@ graph TD
     end
 ```
 
-### 1.1 パラメータ・メモリ (`params_memory`)
-モデルの全重みを1本の連続した `float*` として `malloc` します。
-モデル構造体内の各ポインタ（`wte`, `wpe`, `ln1w`, `qkvw` など）は、このバッファの**特定オフセットを指すだけのエイリアス**です。
+### 1.1 Parameter Memory (`params_memory`)
+All model weights are `malloc`'d as a single continuous `float*` array.
+Each pointer within the model struct (`wte`, `wpe`, `ln1w`, `qkvw`, etc.) is merely an **alias pointing to a specific offset in this buffer**.
 
 ```c
-// llm.c のパラメータ確保イメージ
+// Parameter allocation concept in llm.c
 size_t num_parameters = ...;
 float* params_memory = (float*)malloc(num_parameters * sizeof(float));
 
-// オフセットをずらしながら各ポインタへ割り当て
+// Assign to pointers while advancing offsets
 float* ptr = params_memory;
 model.wte = ptr; ptr += V * C;
 model.wpe = ptr; ptr += maxT * C;
@@ -53,24 +53,24 @@ for (int l = 0; l < L; l++) {
 }
 ```
 
-* **利点**:
-  - メモリ断片化（Fragmentation）がゼロ。
-  - チェックポイント保存・読み込みが単一の `fwrite` / `fread` で完了する。
-  - オプティマイザ（AdamW）の更新処理が、構造に関係なく**単一の巨大な1次元配列に対するループ**として一瞬で処理できる。
+* **Advantages**:
+  - Zero memory fragmentation.
+  - Checkpoint saving and loading completes in a single `fwrite` / `fread` call.
+  - Optimizer updates (AdamW) execute as a single flat loop over a 1D array regardless of model depth or layer topology.
 
-### 1.2 活性化値メモリ (`acts_memory`)
-逆伝播（Backward）を計算するには、順伝播（Forward）の途中で出力された中間テンソル（Activation）が必要です。
-`llm.c` では、バッチサイズ $B$、系列長 $T$、レイヤー数 $L$、隠れ層次元 $C$ から**「学習1ステップで通過する全中間テンソルの総バイト数」**を厳密に計算し、事前に1つのバッファとして確保します。
+### 1.2 Activation Memory (`acts_memory`)
+Computing the backward pass requires intermediate activations produced during forward propagation.
+In `llm.c`, the exact byte size of all intermediate tensors passed during a single step is derived mathematically from batch size $B$, sequence length $T$, number of layers $L$, and hidden dimension $C$, then allocated upfront as a single buffer.
 
 ```text
-acts_memory の構成要素（一部）:
+acts_memory composition (sample):
 ├── inputs       : (B, T)
 ├── targets      : (B, T)
 ├── encoded      : (B, T, C)
 ├── Layer 0:
 │   ├── ln1      : (B, T, C)
 │   ├── qkv      : (B, T, 3*C)
-│   ├── att      : (B, NH, T, T)  <- 最もメモリを食う領域
+│   ├── att      : (B, NH, T, T)  <- Peak memory footprint
 │   ├── attproj  : (B, T, C)
 │   ├── ln2      : (B, T, C)
 │   └── mlp      : (B, T, 4*C)
@@ -78,54 +78,54 @@ acts_memory の構成要素（一部）:
 └── logits       : (B, T, V)
 ```
 
-### 1.3 勾配メモリ (`grads_memory`)
-`params_memory` と全く同じサイズ・同じレイアウトで確保されます。
-各パラメータ $W$ に対応する $\frac{\partial L}{\partial W}$ を保持します。
+### 1.3 Gradient Memory (`grads_memory`)
+Allocated with identical dimensions and layout to `params_memory`.
+Stores $\frac{\partial L}{\partial W}$ corresponding to each parameter $W$.
 
 ---
 
-## 2. 手動バックプロパゲーションの規約（Manual Autograd）
+## 2. Manual Autograd Convention
 
-`llm.c` の最大の特徴は、**動的な計算グラフ（Autograd Graph）を作らない**ことです。
-各層の数式を手作業で偏微分し、順伝播関数と逆伝播関数を1対1でペアとして実装しています。
+The most distinctive feature of `llm.c` is that it **builds no dynamic computational graph (Autograd Graph)**.
+Every layer's analytical partial derivatives are hand-derived, pairing forward and backward functions 1:1.
 
-### 2.1 関数シグネチャの規約
-典型的なレイヤー（例：`layernorm`）のシグネチャは以下のようになっています。
+### 2.1 Function Signature Conventions
+A representative layer signature (e.g. `layernorm`):
 
 ```c
-// 順伝播
+// Forward pass
 void layernorm_forward(
-    float* out,        // 出力活性化値バッファ (B, T, C)
-    float* mean,       // 逆伝播で再利用する平均 (B, T)
-    float* rstd,       // 逆伝播で再利用する分散の逆平方根 (B, T)
-    const float* inp,  // 入力活性化値 (B, T, C)
-    const float* weight,// パラメータ γ (C)
-    const float* bias,  // パラメータ β (C)
+    float* out,        // Output activations buffer (B, T, C)
+    float* mean,       // Mean cached for backward pass (B, T)
+    float* rstd,       // Reciprocal standard deviation cached for backward pass (B, T)
+    const float* inp,  // Input activations (B, T, C)
+    const float* weight,// Parameter gamma (C)
+    const float* bias,  // Parameter beta (C)
     int B, int T, int C
 );
 
-// 逆伝播
+// Backward pass
 void layernorm_backward(
-    float* dinp,       // 入力に対する勾配 dL/dinp (B, T, C) を累積/代入
-    float* dweight,    // 重みに対する勾配 dL/dweight (C) を累積
-    float* dbias,      // バイアスに対する勾配 dL/dbias (C) を累積
-    const float* dout, // 上流から流れてきた出力勾配 dL/dout (B, T, C)
-    const float* inp,  // 順伝播の入力
-    const float* mean, // 順伝播で保存した平均
-    const float* rstd, // 順伝播で保存した rstd
-    const float* weight,// パラメータ γ
+    float* dinp,       // Input gradient dL/dinp (B, T, C) accumulated or written
+    float* dweight,    // Weight gradient dL/dweight (C) accumulated
+    float* dbias,      // Bias gradient dL/dbias (C) accumulated
+    const float* dout, // Upstream incoming gradient dL/dout (B, T, C)
+    const float* inp,  // Cached forward input
+    const float* mean, // Cached mean from forward pass
+    const float* rstd, // Cached rstd from forward pass
+    const float* weight,// Parameter gamma
     int B, int T, int C
 );
 ```
 
-### 2.2 逆伝播（Backward Pass）の実行順序
-学習ループでは、順伝播で通ったパスを**完全に逆順**で手動実行します。
+### 2.2 Execution Order of the Backward Pass
+The training loop runs the forward execution graph in **strictly reverse order**:
 
 ```text
-[順伝播: Forward]
+[Forward Pass]
 Embeddings -> LN1 -> QKV_Matmul -> Attention -> Att_Proj -> LN2 -> MLP -> LN_f -> Logits -> CrossEntropy(Loss)
 
-[逆伝播: Backward]
+[Backward Pass]
 dL/dLogits <- dCrossEntropy
   ↓
 dLN_f <- dLogits_Matmul_Backward
@@ -133,61 +133,61 @@ dLN_f <- dLogits_Matmul_Backward
 dMLP <- dLN2_Backward
   ↓
 dAtt_Proj <- dAttention_Backward
-  ... (全レイヤーを逆順に遡る)
+  ... (Traversing backwards across all layers)
   ↓
 dEmbeddings
 ```
 
-ポインタのライフタイムや所有権を意識する必要がなく、すべての入出力アドレスが決まっているため、キャッシュ局所性が極めて高くなります。
+Because every buffer location is determined upfront with zero allocation overhead, CPU cache locality is exceptionally high.
 
 ---
 
-## 3. 周辺サブシステムの構造
+## 3. Subsystem Architecture
 
-### 3.1 オプティマイザ: `AdamW`
-`llm.c` の AdamW は驚くほど短くシンプルです。
-全パラメータが 1 次元の巨大バッファ `params_memory` に並んでいるため、レイヤーの形に関係なく、**全パラメータ数 $N$ のフラットなループを1回回すだけ**です。
+### 3.1 Optimizer: `AdamW`
+The AdamW optimizer in `llm.c` is remarkably concise.
+Because all parameters are flattened across `params_memory`, the update step is just a **single flat loop over the total parameter count $N$**:
 
 ```c
-// llm.c の AdamW コアロジック (簡略化)
+// AdamW core logic in llm.c (simplified)
 for (int i = 0; i < num_parameters; i++) {
     float param = params[i];
     float grad = grads[i];
 
-    // 重み減衰 (Weight Decay)
+    // Weight Decay
     param -= lr * wd * param;
 
-    // モーメンタム (m) と 二乗モーメンタム (v) の更新
+    // Update biased first and second moment estimates
     m[i] = beta1 * m[i] + (1.0f - beta1) * grad;
     v[i] = beta2 * v[i] + (1.0f - beta2) * grad * grad;
 
-    // バイアス補正
+    // Compute bias-corrected moments
     float m_hat = m[i] / (1.0f - beta1_t);
     float v_hat = v[i] / (1.0f - beta2_t);
 
-    // パラメータ更新
+    // Update parameter
     params[i] = param - (lr * m_hat) / (sqrtf(v_hat) + eps);
 }
 ```
 
-### 3.2 データローダー: `DataLoader`
-複雑なPythonスクリプトやIPC（プロセス間通信）を使わず、前処理済みのトークンバイナリ（`uint16` または `uint32` のシーケンシャルなファイル）を直接 C 言語で読み込みます。
+### 3.2 Data Loader: `DataLoader`
+Rather than relying on external Python runtimes or inter-process communication (IPC), tokenized binary files (`uint16` or `uint32` sequential arrays) are streamed directly in C:
 
-1. バイナリファイルのヘッダーからマジックナンバーと語彙サイズ、トークン総数を読み取る。
-2. ファイルポインタから $B \times T$ 個のトークンを読み込んで `inputs` に代入。
-3. 1トークン分ずらした $B \times T$ 個のトークンを `targets` に代入。
-4. ファイル末尾に達したらシーク位置を先頭に戻す（エポック周回）。
+1. Read header magic numbers, vocabulary size, and total token count from the binary file header.
+2. Read $B \times T$ tokens into `inputs`.
+3. Read the next $B \times T$ tokens offset by 1 into `targets`.
+4. Wrap file pointer back to the beginning upon reaching EOF (epoch cycling).
 
 ---
 
-## 4. Rustへの移植に向けた教訓と設計課題
+## 4. Architectural Lessons for Pure Rust Porting
 
-`llm.c` を Rust に落とし込む際に考慮すべきポイント：
+Key architectural takeaways when implementing this philosophy in Rust:
 
-1. **ポインタ地獄の解消**:
-   - C言語では `float* ptr = memory + offset;` で自由にポインタ演算をしますが、Rustでこれを直接やると `unsafe` だらけになります。
-   - **Rust的解決策**: 1つの巨大な `Vec<f32>` を保持しつつ、各レイヤーには安全に切り分けたスライス `&[f32]`（順伝播用）や `&mut [f32]`（逆伝播書き込み用）を貸し出す**「アリーナ・アロケータ型」**のラッパーを設計するのが最も自然で安全です。
-2. **中間状態のライフサイクル管理**:
-   - `acts_memory` をレイヤー間で使い回す際、どの値が逆伝播まで生き残る必要があるかを型システムで明示できます。
-3. **演算のモジュール化**:
-   - `llm.c` のコードは1〜2ファイルに数千行詰め込まれており可読性が低いため、Rustでは `layers/` 単位にモジュールを分割しつつ、メモリのフラット性を維持するアーキテクチャを構築します。
+1. **Eliminating Raw Pointer Fragility**:
+   - In C, pointer arithmetic like `float* ptr = memory + offset;` is ubiquitous, but doing this naively in Rust leads to `unsafe` bloat.
+   - **Idiomatic Rust Solution**: Maintain flat `Vec<f32>` arrays while lending safe slices `&[f32]` for forward evaluation and `&mut [f32]` for backward updates.
+2. **Intermediate State Lifecycle Management**:
+   - Explicitly enforce which activation tensors must persist until backward propagation via compile-time types or structured state structs.
+3. **Modular Layer Decomposition**:
+   - While `llm.c` condenses thousands of lines into one or two files, Rust enables modular division across `layers/` (Attention, MLP, RMSNorm) while preserving zero-allocation flat buffer performance.

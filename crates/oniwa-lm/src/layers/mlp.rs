@@ -1,12 +1,12 @@
-//! SwiGLU (Swish-Gated Linear Unit) MLP 層
+//! SwiGLU (Swish-Gated Linear Unit) MLP layer
 //!
-//! 順伝播:
+//! Forward pass:
 //!   G = X * W_gate       (N, FFN)
 //!   U = X * W_up         (N, FFN)
 //!   H = Swish(G) * U     (N, FFN)
 //!   Y = H * W_down       (N, C)
 //!
-//! ここで Swish(g) = g * sigmoid(g) = g / (1 + exp(-g))
+//! where Swish(g) = g * sigmoid(g) = g / (1 + exp(-g))
 
 pub struct SwiGLU;
 
@@ -22,14 +22,14 @@ impl SwiGLU {
         sig * (1.0 + x * (1.0 - sig))
     }
 
-    /// 順伝播
+    /// Forward pass
     ///
     /// - `out`: [N, C]
-    /// - `act_g`: 逆伝播用キャッシュ [N, FFN]
-    /// - `act_u`: 逆伝播用キャッシュ [N, FFN]
-    /// - `act_h`: 逆伝播用キャッシュ [N, FFN]
+    /// - `act_g`: backward cache [N, FFN]
+    /// - `act_u`: backward cache [N, FFN]
+    /// - `act_h`: backward cache [N, FFN]
     /// - `inp`: [N, C]
-    /// - `w_gate_up`: [C, 2 * FFN] (前半がgate, 後半がup)
+    /// - `w_gate_up`: [C, 2 * FFN] (first half is gate, second half is up)
     /// - `w_down`: [FFN, C]
     #[allow(clippy::too_many_arguments)]
     pub fn forward(
@@ -44,7 +44,7 @@ impl SwiGLU {
         c: usize,
         ffn: usize,
     ) {
-        // 1. G, U の計算: inp [N, C] * w_gate_up [C, 2*FFN]
+        // 1. Calculate G and U: inp [N, C] * w_gate_up [C, 2*FFN]
         for i in 0..n {
             let x_row = &inp[i * c..(i + 1) * c];
             for j in 0..ffn {
@@ -62,7 +62,7 @@ impl SwiGLU {
             }
         }
 
-        // 2. Y の計算: H [N, FFN] * w_down [FFN, C]
+        // 2. Calculate Y: H [N, FFN] * w_down [FFN, C]
         for i in 0..n {
             let h_row = &act_h[i * ffn..(i + 1) * ffn];
             for j in 0..c {
@@ -75,7 +75,7 @@ impl SwiGLU {
         }
     }
 
-    /// 逆伝播
+    /// Backward pass
     #[allow(clippy::too_many_arguments)]
     pub fn backward(
         dinp: &mut [f32],
@@ -194,7 +194,7 @@ mod tests {
             ffn,
         );
 
-        // 数値微分チェック for inp
+        // Numerical gradient check for inp
         let eps = 1e-3f32;
         for i in 0..inp.len() {
             let mut inp_pos = inp.clone();

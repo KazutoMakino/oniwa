@@ -1,10 +1,10 @@
 # oniwa-lm Documentation
 
-`oniwa-lm` のアーキテクチャ設計・数式・メモリモデル等の詳細設計ドキュメントは、リポジトリルートの [`docs/`](../../../docs/) に統合・一元化されています。
+Detailed design documentation on the architecture, mathematical formulations, and memory models of `oniwa-lm` has been consolidated in the repository root [`docs/`](../../../docs/).
 
-- [01. llm.c アーキテクチャ分解](../../../docs/01_llm_c_architecture.md)
-- [02. モダン・プリミティブ数式と導出](../../../docs/02_modern_primitives.md)
-- [03. Rust メモリ・ライフタイム設計](../../../docs/03_rust_memory_model.md)
-- [04. 開発引き継ぎ書](../../../docs/04_development_handoff.md)
-- [05. 再現性・監査ロギング仕様](../../../docs/05_reproducibility_and_logging.md)
-- [06. 熱制御とエンドツーエンド監査台帳](../../../docs/06_thermal_and_end_to_end_provenance.md)
+- [01. llm.c Architecture Breakdown](../../../docs/01_llm_c_architecture.md)
+- [02. Modern Primitives Formulation & Derivations](../../../docs/02_modern_primitives.md)
+- [03. Rust Memory & Lifetime Design](../../../docs/03_rust_memory_model.md)
+- [04. Development Handover Guide](../../../docs/04_development_handoff.md)
+- [05. Reproducibility & Audit Logging Specification](../../../docs/05_reproducibility_and_logging.md)
+- [06. Thermal Throttling & End-to-End Provenance Ledger](../../../docs/06_thermal_and_end_to_end_provenance.md)

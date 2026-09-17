@@ -1,12 +1,13 @@
-//! 双方向マルチヘッド自己注意層 (Bidirectional Multi-Head Self-Attention with RoPE)
+//! Bidirectional Multi-Head Self-Attention with RoPE
 //!
-//! 因果マスク（下三角マスク）を排し、文脈全体を双方向から参照する BERT / ModernBERT スタイル。
-//! 決定モデル（System One）において、入力全体を一望して最適な判定を下すために使用。
+//! Omits the causal lower-triangular mask to allow bidirectional context aggregation,
+//! similar to BERT / ModernBERT.
+//! Used in the decision model (System One) to capture whole-sequence context in a single pass.
 
 pub struct BidirectionalSelfAttention;
 
 impl BidirectionalSelfAttention {
-    /// RoPE (Rotary Position Embedding) 順伝播 & 逆伝播
+    /// Rotary Position Embedding (RoPE) forward & inverse rotation
     pub fn apply_rope(vec: &mut [f32], b: usize, t: usize, nh: usize, d_h: usize, inverse: bool) {
         let sign = if inverse { -1.0f32 } else { 1.0f32 };
         let half = d_h / 2;
@@ -33,14 +34,14 @@ impl BidirectionalSelfAttention {
         }
     }
 
-    /// 順伝播
+    /// Forward pass
     #[allow(clippy::too_many_arguments)]
     pub fn forward(
         out: &mut [f32],
         act_q: &mut [f32],
         act_k: &mut [f32],
         act_v: &mut [f32],
-        act_att: &mut [f32],     // [B, NH, T, T] Softmax後の重み
+        act_att: &mut [f32],     // [B, NH, T, T] weights after Softmax
         act_att_out: &mut [f32], // [B, T, C]
         inp: &[f32],
         w_qkv: &[f32],
@@ -54,7 +55,7 @@ impl BidirectionalSelfAttention {
         let d_h = c / nh;
         let scale = 1.0f32 / (d_h as f32).sqrt();
 
-        // 1. QKV 射影: inp [N, C] * w_qkv [C, 3*C]
+        // 1. QKV projection: inp [N, C] * w_qkv [C, 3*C]
         for i in 0..n {
             let x_row = &inp[i * c..(i + 1) * c];
             for j in 0..c {
@@ -73,11 +74,11 @@ impl BidirectionalSelfAttention {
             }
         }
 
-        // 2. RoPE 適用 (Q と K)
+        // 2. Apply RoPE (Q and K)
         Self::apply_rope(act_q, b, t, nh, d_h, false);
         Self::apply_rope(act_k, b, t, nh, d_h, false);
 
-        // 3. 双方向 Attention Matrix: S = Q * K^T / sqrt(D_h) （マスクなし全結合）
+        // 3. Bidirectional Attention Matrix: S = Q * K^T / sqrt(D_h) (fully dense, unmasked)
         for bi in 0..b {
             for hi in 0..nh {
                 let att_offset = (bi * nh + hi) * (t * t);
@@ -86,7 +87,7 @@ impl BidirectionalSelfAttention {
                     let q_vec = &act_q[q_offset..q_offset + d_h];
                     let row_offset = att_offset + i * t;
 
-                    // 全トークン j に対して内積計算
+                    // Compute inner product across all tokens j
                     let mut max_val = f32::NEG_INFINITY;
                     for j in 0..t {
                         let k_offset = ((bi * t + j) * nh + hi) * d_h;
@@ -103,7 +104,7 @@ impl BidirectionalSelfAttention {
                         }
                     }
 
-                    // Softmax (全系列で正規化)
+                    // Softmax normalization across sequence
                     let mut sum_exp = 0.0f32;
                     for j in 0..t {
                         let exp_v = (act_att[row_offset + j] - max_val).exp();
@@ -143,7 +144,7 @@ impl BidirectionalSelfAttention {
         }
     }
 
-    /// 逆伝播
+    /// Backward pass
     #[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
     pub fn backward(
         dinp: &mut [f32],
@@ -182,7 +183,7 @@ impl BidirectionalSelfAttention {
             }
         }
 
-        // 2. Attention Backward (全系列双方向)
+        // 2. Attention Backward (dense bidirectional)
         let mut dq = vec![0.0f32; n * c];
         let mut dk = vec![0.0f32; n * c];
         let mut dv = vec![0.0f32; n * c];
@@ -237,7 +238,7 @@ impl BidirectionalSelfAttention {
             }
         }
 
-        // 3. RoPE 逆回転 (dQ と dK)
+        // 3. Inverse RoPE rotation (dQ and dK)
         Self::apply_rope(&mut dq, b, t, nh, d_h, true);
         Self::apply_rope(&mut dk, b, t, nh, d_h, true);
 

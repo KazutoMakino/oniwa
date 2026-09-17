@@ -1,12 +1,12 @@
-//! SwiGLU (Swish-Gated Linear Unit) MLP 層
+//! SwiGLU (Swish-Gated Linear Unit) MLP layer
 //!
-//! 順伝播:
+//! Forward pass:
 //!   G = X * W_gate       (N, FFN)
 //!   U = X * W_up         (N, FFN)
 //!   H = Swish(G) * U     (N, FFN)
 //!   Y = H * W_down       (N, C)
 //!
-//! ここで Swish(g) = g * sigmoid(g) = g / (1 + exp(-g))
+//! where Swish(g) = g * sigmoid(g) = g / (1 + exp(-g))
 
 pub struct SwiGLU;
 
@@ -22,7 +22,7 @@ impl SwiGLU {
         sig * (1.0 + x * (1.0 - sig))
     }
 
-    /// 順伝播
+    /// Forward pass
     #[allow(clippy::too_many_arguments)]
     pub fn forward(
         out: &mut [f32],
@@ -65,7 +65,7 @@ impl SwiGLU {
         }
     }
 
-    /// 逆伝播
+    /// Backward pass
     #[allow(clippy::too_many_arguments)]
     pub fn backward(
         dinp: &mut [f32],

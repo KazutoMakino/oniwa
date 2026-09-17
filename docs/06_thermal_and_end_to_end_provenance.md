@@ -1,78 +1,77 @@
-# Phase 3 追補2: 実温度動的熱制御 & 全ライフサイクル完全ログ台帳
+# Phase 3 Addendum 2: Real-Time Dynamic Thermal Throttling & End-to-End Provenance Ledger
 
-「家庭菜園・クリーンAI（`niwa-lm`）」構想における2大追加要件：
-1. **実温度ベースの動的負荷調整（貧弱なファンでも安全なハードウェア保護）**
-2. **ビルド・データ取得・学習・推論の全イベントを網羅する完全系譜台帳（End-to-End Provenance Ledger）**
-の設計と仕様です。
+This document details two foundational capabilities of the "Kitchen Garden & Clean AI (`oniwa-lm`)" architecture:
+1. **Dynamic thermal throttling based on physical CPU temperature (hardware protection for edge devices)**
+2. **End-to-End Provenance Ledger covering build, data ingestion, training, and inference lifecycles**
 
 ---
 
-## 1. 実温度ベースの動的熱制御（Dynamic Thermal Throttling）
+## 1. Dynamic Thermal Throttling
 
-Raspberry Pi 4 に小型の冷却ファンが付いている場合でも、4コアフル稼働（CPU使用率400%）が長時間続くと、熱が蓄積して80℃を超え、OSやSoC自身による強制的なクロックダウン（サーマルスロットリング）やフリーズを引き起こすリスクがあります。
+Even when a Raspberry Pi 4 is equipped with a small cooling fan, sustained 100% load across all 4 CPU cores causes heat buildup that can exceed 80°C. This risks triggering OS/SoC hardware throttling or thermal lockups.
 
-### 1.1 制御アーキテクチャ
-Linux カーネルが提供する sysfs インターフェース（`/sys/class/thermal/thermal_zone0/temp`）から、**毎ステップ（または定期インターバル）ごとにコア実温度をミリ秒オーダーで直接取得**します。
+### 1.1 Control Architecture
+Through the Linux kernel sysfs interface (`/sys/class/thermal/thermal_zone0/temp`), core temperatures are queried at millisecond precision on every step or at regular intervals.
 
 ```mermaid
 graph TD
-    Step["学習 / 推論ステップ完了"] --> ReadTemp["実温度読み取り\n(/sys/class/thermal/.../temp)"]
-    ReadTemp --> Check{"温度チェック"}
+    Step["Training / Inference Step Complete"] --> ReadTemp["Read Core Temperature\n(/sys/class/thermal/.../temp)"]
+    ReadTemp --> Check{"Temperature Check"}
     
-    Check -->|"< 70℃ (安全)"| Continue["スリープなし (最高速)"]
-    Check -->|"70℃〜78℃ (目標超過)"| Proportional["比例冷却スリープ\n(10ms〜100ms 挿入)"]
-    Check -->|"> 78℃ (危険温度)"| Critical["緊急冷却スリープ\n(300ms 挿入)"]
+    Check -->|"< 70°C (Safe)"| Continue["No sleep (Maximum speed)"]
+    Check -->|"70°C–78°C (Target Exceeded)"| Proportional["Proportional Cooling Sleep\n(10ms–100ms inserted)"]
+    Check -->|"> 78°C (Critical Temperature)"| Critical["Emergency Cooling Sleep\n(300ms inserted)"]
     
-    Proportional --> LogThermal["熱状態とスリープ時間をログ記録"]
+    Proportional --> LogThermal["Log thermal state and sleep duration"]
     Critical --> LogThermal
-    Continue --> NextStep["次ステップへ進む"]
+    Continue --> NextStep["Proceed to next step"]
     LogThermal --> NextStep
 ```
 
-### 1.2 メリット
-* **ハードウェア寿命の最大化**: SoC温度を安全域（65℃〜72℃前後）に自動維持。
-* **サーマルスロットリングによる急激な性能低下の防止**: OSによる乱暴なクロック半減ではなく、ソフト側で微小なスリープを挟んで冷却するため、安定したステップ間時間を維持できます。
-* **熱状態の可視化**: ログに温度とスリープ時間がステップ単位で克明に刻まれるため、「どの学習ステップで熱負荷が高かったか」を後から完全に分析できます。
+### 1.2 Benefits
+* **Hardware Longevity**: Automatically maintains SoC temperatures in a safe band (65°C–72°C).
+* **Prevention of Abrupt Throttling**: Rather than abrupt OS-level frequency halving, smooth micro-sleeps maintain consistent inter-step throughput.
+* **Full Thermal Auditability**: Every step records temperature and throttling duration into the ledger, providing complete post-hoc thermal analytics.
 
 ---
 
-## 2. 全ライフサイクルの完全記録（Provenance Ledger）
+## 2. End-to-End Provenance Ledger
 
-「学習データがどこから来て、どのコミットのコードでビルドされ、どのように学習され、どんな推論を行ったか」という因果関係を、1つの改ざん不能な台帳ファイル（`provenance_ledger.jsonl`）としてストリーミング永続化します。
+The entire causal sequence—where data originated, what exact commit built the binary, how training proceeded, and what inference outputs were generated—is streamed to an append-only, tamper-evident ledger (`ledger_index.jsonl`).
 
 ```text
 [1. Build Event]
   ├── Git Commit Hash & Dirty Flag
   ├── rustc Version & Profile (release/debug)
-  └── 生成された実行バイナリの SHA-256 チェックサム
+  └── Generated Binary SHA-256 Checksum
        ↓
 [2. Data Ingestion Event]
-  ├── 出所 (青空文庫 URL / e-Gov API 等)
-  ├── ライセンス (Public Domain / CC-BY 等)
-  ├── 原本生テキストの SHA-256
-  └── トークナイズ後バイナリの SHA-256 & 総トークン数
+  ├── Provenance Source (Aozora Bunko URL / e-Gov API / arXiv / etc.)
+  ├── License (Public Domain / CC-BY / etc.)
+  ├── Raw Raw Text SHA-256 Digest
+  └── Tokenized Binary SHA-256 & Total Token Count
        ↓
 [3. Training Session & Step Events]
-  ├── 乱数シード & ハイパーパラメータ
-  ├── 初期重みチェックサム
-  └── 各ステップの Loss, 学習率, 勾配ノルム, CPU温度, 冷却時間, 重みチェックサム
+  ├── Random Seed & Hyperparameters
+  ├── Initial Weights Checksum
+  └── Step Loss, Learning Rate, Gradient Norm, CPU Temp, Sleep Time, Weight Checksum
        ↓
 [4. Inference Event]
-  ├── プロンプト & 生成テキスト
-  ├── サンプリング設定 (Temperature, Top-p, Seed)
-  └── 使用モデル重みの SHA-256 チェックサム
+  ├── Prompt & Generated Text
+  ├── Sampling Configuration (Temperature, Top-p, Seed)
+  └── Active Weights SHA-256 Checksum
 ```
 
-### 2.1 データの透明性と真正性（Authenticity）
-この台帳が存在することで、第三者に対して：
-> 「このモデルが吐き出したこの言葉は、この青空文庫のテキストから、このシード値で、このバイナリによって学習されたものである」
+### 2.1 Transparency and Authenticity
+With this ledger, one can cryptographically and mathematically demonstrate to any auditor:
+> "This sentence generated by this model was cultivated from this specific public domain text, with this random seed, executed by this exact binary."
 
-ということを、数学的・暗号論的に100%証明できます。これこそが、大企業のブラックボックスAIとは決定的に異なる**「産地直送・生産者の顔が見えるオーガニックAI」の真髄**です。
+This is the very essence of **"organic intelligence with full provenance"**, in direct contrast to Big Tech black-box systems.
 
 ---
 
-## 3. 実装モジュール参照
+## 3. Implementation Module References
 
-* **熱制御マネージャー**: [`crates/oniwa-lm/src/thermal.rs`](../crates/oniwa-lm/src/thermal.rs)
-* **統合ライフサイクル台帳**: [`crates/oniwa-lm/src/logger.rs`](../crates/oniwa-lm/src/logger.rs)
-* **決定論的再現性 & ハッシュ**: [`crates/oniwa-lm/src/reproducibility.rs`](../crates/oniwa-lm/src/reproducibility.rs)
+* **Thermal Manager**: [`crates/oniwa-lm/src/thermal.rs`](../crates/oniwa-lm/src/thermal.rs)
+* **Unified Lifecycle Ledger**: [`crates/oniwa-lm/src/logger.rs`](../crates/oniwa-lm/src/logger.rs)
+* **Deterministic Reproducibility & Checksums**: [`crates/oniwa-lm/src/reproducibility.rs`](../crates/oniwa-lm/src/reproducibility.rs)
