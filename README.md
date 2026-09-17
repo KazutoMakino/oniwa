@@ -142,7 +142,7 @@ cargo run --release -p oniwa-lm --bin train -- --add-steps 100
 #   --reset         : Discard existing checkpoints and train from scratch
 #   --infinite, -i  : Infinite training loop
 ```
-During training, generated text samples (the sprouting of words) are recorded automatically into **`logs/growth_journal.md`** as a garden growth journal.
+During training, generated text samples (the sprouting of words) are recorded automatically into **`logs/growth_journal.md`** (Japanese version: [`growth_journal.ja.md`](logs/growth_journal.ja.md)) as a garden growth journal.
 
 ### 4. Background Execution & Remote Process Management
 

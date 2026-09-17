@@ -137,7 +137,7 @@ cargo run --release -p oniwa-lm --bin train -- --add-steps 100
 #   --reset         : 既存チェックポイントを破棄して新規開始
 #   --infinite, -i  : 無限学習ループ
 ```
-学習中の生成文（言葉の芽吹き）は、**`logs/growth_journal.md`** に観葉植物の観察日記として自動記録されます。
+学習中の生成文（言葉の芽吹き）は、**`logs/growth_journal.md`**（日本語版: [`growth_journal.ja.md`](logs/growth_journal.ja.md)）に観葉植物の観察日記として自動記録されます。
 
 ### 4. バックグラウンド実行 & プロセス運用ガイド (遠隔・放置運用)
 
@@ -179,7 +179,7 @@ tail -f train.log
 tail -n 50 train.log
 
 # 観葉植物・生育観察日記（成長記録）の確認
-cat logs/growth_journal.md | tail -n 20
+cat logs/growth_journal.ja.md | tail -n 20
 ```
 
 #### ④ 安全な学習停止（チェックポイント自動保存）
