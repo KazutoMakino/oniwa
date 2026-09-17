@@ -1,0 +1,27 @@
+[package]
+name = "oniwa-decide"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "TypeSafe System One decision engine powered by bidirectional Transformer, outputting Choice, Score, and Noul with calibrated confidence."
+
+[dependencies]
+oniwa-lm = { path = "../oniwa-lm" }
+
+# 高速な行列積演算 (OpenBLAS/BLIS相当のピュアRust/アセンブリ最適化)
+matrixmultiply = "0.3"
+
+# CPUマルチコア並列化
+rayon = "1.10"
+
+# 決定論的乱数生成 (再現性の担保)
+rand = "0.8"
+rand_chacha = "0.3"
+
+# シリアライズ・ログ
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# チェックサム
+sha2 = "0.10"
