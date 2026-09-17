@@ -1,6 +1,10 @@
 # ONIWA (お庭)
 
 <p align="left">
+  <b>日本語</b> | <a href="README.en.md">English</a>
+</p>
+
+<p align="left">
   <a href="https://github.com/KazutoMakino/oniwa/actions"><img src="https://img.shields.io/github/actions/workflow/status/KazutoMakino/oniwa/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status"></a>
   <img src="https://img.shields.io/badge/language-Rust-DEA584.svg?logo=rust&logoColor=white&style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License">
@@ -209,10 +213,10 @@ cargo run --release -p oniwa-lm --bin chat
 
 本プロジェクトはオープンソースコミュニティからの参加・改善を歓迎します！
 
-- [コントリビューションガイド (CONTRIBUTING.md)](CONTRIBUTING.md): 開発環境構築、PR作成フロー
+- [コントリビューションガイド (CONTRIBUTING.md)](CONTRIBUTING.md) / [English](CONTRIBUTING.en.md)
 - [AI エージェント開発プロトコル (AGENTS.md)](AGENTS.md): 自律エージェント向け厳格運用規約
-- [行動規範 (CODE_OF_CONDUCT.md)](CODE_OF_CONDUCT.md): コミュニティ共通の行動規範
-- [セキュリティポリシー (SECURITY.md)](SECURITY.md): 脆弱性の非公開報告窓口
+- [行動規範 (CODE_OF_CONDUCT.md)](CODE_OF_CONDUCT.md) / [English](CODE_OF_CONDUCT.en.md)
+- [セキュリティポリシー (SECURITY.md)](SECURITY.md) / [English](SECURITY.en.md)
 
 ---
 
