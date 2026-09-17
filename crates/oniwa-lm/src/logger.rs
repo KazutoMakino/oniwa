@@ -135,6 +135,27 @@ pub struct InferenceLog {
 }
 
 // ==========================================
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TrainingRunLog {
+    pub timestamp_utc: String,
+    pub model_name: String,
+    pub git_commit_hash: String,
+    #[serde(default)]
+    pub git_dirty: bool,
+    pub random_seed: u64,
+    pub total_steps: usize,
+    pub best_step: usize,
+    pub best_loss: f32,
+    pub final_loss: f32,
+    pub best_weights_sha256: String,
+    pub latest_weights_sha256: String,
+    pub elapsed_secs: f32,
+    pub cumulative_energy_wh: f32,
+    pub target_arch: String,
+    pub target_os: String,
+}
+
+// ==========================================
 // Provenance Ledger
 // ==========================================
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -145,6 +166,7 @@ pub enum ProvenanceEvent {
     TrainingStart(TrainingManifest),
     TrainingStep(TrainingStepLog),
     Inference(InferenceLog),
+    TrainingRun(TrainingRunLog),
 }
 
 /// Streaming logger appending all lifecycle events to a single append-only ledger file.

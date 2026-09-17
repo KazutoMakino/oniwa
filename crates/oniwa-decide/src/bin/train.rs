@@ -9,6 +9,7 @@ use oniwa_lm::power::PowerTracker;
 use oniwa_lm::reproducibility::DeterministicRng;
 use oniwa_lm::thermal::{ThermalConfig, ThermalController};
 use oniwa_lm::tokenizer::CharTokenizer;
+use sha2::Digest;
 use std::env;
 use std::time::Instant;
 
@@ -102,10 +103,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Checkpoint automatic resume handling
     let mut start_step = 1;
+    let mut best_step = 1;
     let mut best_loss = if !reset_mode && best_checkpoint_dir.join("meta.json").exists() {
         let meta_str =
             std::fs::read_to_string(best_checkpoint_dir.join("meta.json")).unwrap_or_default();
         let meta: serde_json::Value = serde_json::from_str(&meta_str).unwrap_or_default();
+        if let Some(s) = meta["step"].as_u64() {
+            best_step = s as usize;
+        }
         meta["loss"]
             .as_f64()
             .map(|v| v as f32)
@@ -174,6 +179,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let start_time = Instant::now();
+    let mut final_loss = if best_loss.is_finite() {
+        best_loss
+    } else {
+        0.0
+    };
 
     for step in start_step..=target_steps {
         let step_start = Instant::now();
@@ -242,6 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let mean_loss = total_loss / (batch_size as f32);
+        final_loss = mean_loss;
 
         // 4. Backward pass
         model.backward(
@@ -284,6 +295,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Save best checkpoint
             if mean_loss < best_loss {
                 best_loss = mean_loss;
+                best_step = step;
                 let _ = model.save_checkpoint(&best_checkpoint_dir, step, mean_loss);
             }
             let _ = model.save_checkpoint(&checkpoint_dir, step, mean_loss);
@@ -294,12 +306,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n============================================================");
     println!(" 🎉 oniwa-decide Training Complete!");
     println!("  - Elapsed Time: {:.2?}", elapsed);
-    println!("  - Minimum Loss: {:.4}", best_loss);
+    println!("  - Minimum Loss: {:.4} (Step {})", best_loss, best_step);
     println!("  - Best Checkpoint Path: {:?}", best_checkpoint_dir);
     println!(
         "  - ⚡ Cumulative Net Energy: {:.4} Wh",
         power_tracker.total_net_wh()
     );
+
+    // 7. Provenance Ledger Recording
+    let root_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let ledger_path = root_dir.join("logs").join("ledger_index.jsonl");
+
+    let compute_file_sha256 = |path: &std::path::Path| -> String {
+        if path.exists() {
+            let bytes = std::fs::read(path).unwrap_or_default();
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(&bytes);
+            format!("{:x}", hasher.finalize())
+        } else {
+            "N/A".into()
+        }
+    };
+
+    let best_sha256 = compute_file_sha256(&best_checkpoint_dir.join("weights.bin"));
+    let latest_sha256 = compute_file_sha256(&checkpoint_dir.join("weights.bin"));
+
+    if ledger_path.parent().map(|p| p.exists()).unwrap_or(false) {
+        if let Ok(mut ledger) = oniwa_lm::logger::ProvenanceLedger::open(&ledger_path) {
+            let git_commit = oniwa_lm::logger::get_git_commit_hash();
+            let git_dirty = oniwa_lm::logger::get_git_dirty();
+            let event =
+                oniwa_lm::logger::ProvenanceEvent::TrainingRun(oniwa_lm::logger::TrainingRunLog {
+                    timestamp_utc: oniwa_lm::logger::current_timestamp_utc(),
+                    model_name: "oniwa-decide".into(),
+                    git_commit_hash: git_commit,
+                    git_dirty,
+                    random_seed: seed,
+                    total_steps: target_steps,
+                    best_step,
+                    best_loss,
+                    final_loss,
+                    best_weights_sha256: best_sha256.clone(),
+                    latest_weights_sha256: latest_sha256,
+                    elapsed_secs: elapsed.as_secs_f32(),
+                    cumulative_energy_wh: power_tracker.total_net_wh(),
+                    target_arch: std::env::consts::ARCH.into(),
+                    target_os: std::env::consts::OS.into(),
+                });
+            if let Ok(()) = ledger.record(&event) {
+                println!(
+                    "  📜 Audit Ledger: Recorded TrainingRun event to {:?}",
+                    ledger_path
+                );
+                println!("  🔒 Best Model SHA-256: {}", best_sha256);
+            }
+        }
+    }
     println!("============================================================");
 
     Ok(())
