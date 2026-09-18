@@ -12,6 +12,7 @@ pub mod layers;
 pub mod loss;
 pub mod model;
 pub mod quaternion;
+pub mod sensor;
 
 pub use dataset::{DatasetGenerator, DocCategory};
 pub use layers::quaternion_linear::QuaternionLinear;
@@ -19,6 +20,7 @@ pub use loss::{LossCalculator, LossConfig};
 pub use model::{DecisionConfig, DecisionModel, RawDecision};
 use oniwa_lm::tokenizer::CharTokenizer;
 pub use quaternion::Quaternion;
+pub use sensor::{SemanticSensor, StateEmbedding};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -112,5 +114,10 @@ impl DecisionEngine {
             },
             inference_time_ms: elapsed,
         }
+    }
+
+    /// Access the underlying encoder as a SemanticSensor for state representations
+    pub fn as_sensor(&self) -> SemanticSensor<'_> {
+        SemanticSensor::new(&self.model, &self.tokenizer)
     }
 }
