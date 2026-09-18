@@ -207,19 +207,50 @@ htop
 cargo run --release -p oniwa-lm --bin chat
 ```
 
+**Live Terminal Output Example**:
+```text
+============================================================
+ 💬 ONIWA (oniwa-lm): Interactive Chat REPL
+============================================================
+  - Vocab size: 4721 characters
+  🔄 Loading checkpoint: 🏆 Best Model (checkpoints/best)
+  - Model specs: seq_len 128, dim 128, num_layers 4, params 1865088 (~1.87 M params)
+  ✅ Loaded successfully! (Step: 7325, Loss: 3.1081)
+
+oniwa-user > メロスは、
+oniwa-lm > メロスは、「その事だ。」（いや、その変りも、たって、「本当の」ところを馬鹿になる。「私は、その事だか、やっぱりましたが、やっ
+```
+
 ### 6. TypeSafe System One Decision Engine (`oniwa-decide`)
 
 Perform sub-100ms, non-autoregressive typed audits directly on your CPU without any external GPU dependencies:
 
 ```bash
 # 1. Audit a code snippet or text (returns Choice, Noul anomaly flag, and Score)
-cargo run --release -p oniwa-decide --bin audit -- "fn main() { println!(\"Hello, oniwa-decide!\"); }"
+cargo run --release -p oniwa-decide --bin audit -- "pub fn fibonacci(n: u64) -> u64 { ... }"
 
 # 2. Train decision model with self-supervised corpus synthesis & thermal/power tracking
 cargo run --release -p oniwa-decide --bin train -- --steps 300 --seed 0
 
 # 3. Incrementally continue training from existing checkpoints (+100 steps)
 cargo run --release -p oniwa-decide --bin train -- --add-steps 100
+```
+
+**Live Audit Output Example**:
+```text
+============================================================
+ 🧭 oniwa-decide: TypeSafe System One Decision Engine
+============================================================
+  💾 Loaded checkpoint: crates/oniwa-decide/checkpoints/best (Loss: 0.8798)
+
+🔍 Input Text:
+pub fn fibonacci(n: u64) -> u64 { if n <= 1 { n } else { fibonacci(n-1) + fibonacci(n-2) } }
+
+⚡ Decision Output (Inference Latency: 519 ms on Raspberry Pi 4 CPU):
+  1. 🏷️ Choice [Document Category]: RustCode (Confidence: 93.2%)
+  2. ⚠️ Noul   [Syntax Anomaly]: Normal (False) (Anomaly Prob: 11.6%)
+  3. 📊 Score  [Syntax Complexity]: 3.29 / 5.0 (Confidence: 91.6%)
+============================================================
 ```
 
 ---
