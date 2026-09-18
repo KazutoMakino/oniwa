@@ -232,6 +232,7 @@ cargo run --release -p oniwa-decide --bin train -- --add-steps 100
 - [Provenance Ledger & Thermal Management](docs/06_thermal_and_end_to_end_provenance.md) / [日本語](docs/06_thermal_and_end_to_end_provenance.ja.md)
 - [oniwa-lm Architecture Design](docs/01_llm_c_architecture.md) / [日本語](docs/01_llm_c_architecture.ja.md)
 - [System One Hypotheses Design Doc](docs/design/system-one-hypotheses.md) / [日本語](docs/design/system-one-hypotheses.ja.md)
+- [Lossy Compression Benchmark Report](docs/benchmarks/lossy-compression-report.md) / [日本語](docs/benchmarks/lossy-compression-report.ja.md)
 
 ---
 

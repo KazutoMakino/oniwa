@@ -233,6 +233,7 @@ cargo run --release -p oniwa-decide --bin train -- --add-steps 100
 - [監査台帳と温度管理仕様](docs/06_thermal_and_end_to_end_provenance.ja.md) / [English](docs/06_thermal_and_end_to_end_provenance.md)
 - [oniwa-lm アーキテクチャ設計](docs/01_llm_c_architecture.ja.md) / [English](docs/01_llm_c_architecture.md)
 - [System One 仮説 設計ドキュメント](docs/design/system-one-hypotheses.ja.md) / [English](docs/design/system-one-hypotheses.md)
+- [非可逆圧縮ベンチマーク実測レポート](docs/benchmarks/lossy-compression-report.ja.md) / [English](docs/benchmarks/lossy-compression-report.md)
 
 ---
 
