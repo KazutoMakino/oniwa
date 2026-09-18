@@ -6,7 +6,7 @@
 //! - Three decision heads (ChoiceHead, NoulHead, ScoreHead)
 //! - Outputs type-safe decisions in a single forward pass
 
-use crate::layers::{BidirectionalSelfAttention, RMSNorm, SwiGLU};
+use crate::layers::{BidirectionalSelfAttention, QuaternionLinear, RMSNorm, SwiGLU};
 use crate::loss::LossCalculator;
 use oniwa_lm::reproducibility::DeterministicRng;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,12 @@ pub struct DecisionConfig {
     pub num_choices: usize,
     #[serde(default = "default_temperature")]
     pub temperature: f32,
+    #[serde(default = "default_use_quaternion_head")]
+    pub use_quaternion_head: bool,
+}
+
+fn default_use_quaternion_head() -> bool {
+    false
 }
 
 fn default_temperature() -> f32 {
@@ -42,6 +48,7 @@ impl Default for DecisionConfig {
             ffn_dim: 256,
             num_choices: 4,
             temperature: 1.0,
+            use_quaternion_head: false,
         }
     }
 }
@@ -74,6 +81,7 @@ pub struct DecisionModel {
     pub offset_head_choice: usize,
     pub offset_head_noul: usize,
     pub offset_head_score: usize,
+    pub offset_head_quat: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -112,6 +120,7 @@ pub struct ForwardCache {
     pub choice_logits: Vec<f32>, // [B, num_choices]
     pub noul_logits: Vec<f32>,   // [B]
     pub score_preds: Vec<f32>,   // [B]
+    pub quat_head_out: Vec<f32>, // [B, 24] Optional cache for Quaternion Head backward pass
 }
 
 impl DecisionModel {
@@ -152,12 +161,34 @@ impl DecisionModel {
 
         let offset_ln_f = offset;
         offset += c;
-        let offset_head_choice = offset;
-        offset += c * num_choices;
-        let offset_head_noul = offset;
-        offset += c;
-        let offset_head_score = offset;
-        offset += c;
+
+        let mut offset_head_choice = 0;
+        let mut offset_head_noul = 0;
+        let mut offset_head_score = 0;
+        let mut offset_head_quat = 0;
+
+        if config.use_quaternion_head {
+            assert_eq!(
+                c % 4,
+                0,
+                "Embedding dim must be divisible by 4 for quaternion head"
+            );
+            assert_eq!(
+                num_choices, 4,
+                "Quaternion head currently supports exactly 4 choices"
+            );
+            offset_head_quat = offset;
+            let in_quat = c / 4;
+            let out_quat = 6;
+            offset += out_quat * in_quat * 4;
+        } else {
+            offset_head_choice = offset;
+            offset += c * num_choices;
+            offset_head_noul = offset;
+            offset += c;
+            offset_head_score = offset;
+            offset += c;
+        }
 
         let total_params = offset;
         let mut params = vec![0.0f32; total_params];
@@ -194,14 +225,25 @@ impl DecisionModel {
         for i in 0..c {
             params[offset_ln_f + i] = 1.0;
         }
-        let scale_hc = (2.0f32 / (c + num_choices) as f32).sqrt();
-        for i in 0..c * num_choices {
-            params[offset_head_choice + i] = (rng.next_f32() * 2.0 - 1.0) * scale_hc;
-        }
-        let scale_single = (2.0f32 / (c + 1) as f32).sqrt();
-        for i in 0..c {
-            params[offset_head_noul + i] = (rng.next_f32() * 2.0 - 1.0) * scale_single;
-            params[offset_head_score + i] = (rng.next_f32() * 2.0 - 1.0) * scale_single;
+
+        if config.use_quaternion_head {
+            let in_quat = c / 4;
+            let out_quat = 6;
+            let quat_w_len = out_quat * in_quat * 4;
+            let scale_quat = (2.0f32 / (in_quat * 4 + out_quat * 4) as f32).sqrt();
+            for i in 0..quat_w_len {
+                params[offset_head_quat + i] = (rng.next_f32() * 2.0 - 1.0) * scale_quat;
+            }
+        } else {
+            let scale_hc = (2.0f32 / (c + num_choices) as f32).sqrt();
+            for i in 0..c * num_choices {
+                params[offset_head_choice + i] = (rng.next_f32() * 2.0 - 1.0) * scale_hc;
+            }
+            let scale_single = (2.0f32 / (c + 1) as f32).sqrt();
+            for i in 0..c {
+                params[offset_head_noul + i] = (rng.next_f32() * 2.0 - 1.0) * scale_single;
+                params[offset_head_score + i] = (rng.next_f32() * 2.0 - 1.0) * scale_single;
+            }
         }
 
         let grads = vec![0.0f32; total_params];
@@ -220,6 +262,7 @@ impl DecisionModel {
             offset_head_choice,
             offset_head_noul,
             offset_head_score,
+            offset_head_quat,
         }
     }
 
@@ -354,36 +397,72 @@ impl DecisionModel {
         let mut choice_logits = vec![0.0f32; b * num_choices];
         let mut noul_logits = vec![0.0f32; b];
         let mut score_preds = vec![0.0f32; b];
+        let mut quat_head_out = Vec::new();
 
-        let w_hc = &self.params[self.offset_head_choice..self.offset_head_choice + c * num_choices];
-        let w_hn = &self.params[self.offset_head_noul..self.offset_head_noul + c];
-        let w_hs = &self.params[self.offset_head_score..self.offset_head_score + c];
+        if self.config.use_quaternion_head {
+            let in_quat = c / 4;
+            let out_quat = 6;
+            let w_quat =
+                &self.params[self.offset_head_quat..self.offset_head_quat + out_quat * in_quat * 4];
+            quat_head_out = vec![0.0f32; b * out_quat * 4];
 
-        for bi in 0..b {
-            let h = &pooled[bi * c..(bi + 1) * c];
+            QuaternionLinear::forward(
+                &mut quat_head_out,
+                &pooled,
+                w_quat,
+                None,
+                b,
+                in_quat,
+                out_quat,
+            );
 
-            // Choice Head
-            for k in 0..num_choices {
-                let mut dot = 0.0f32;
-                for j in 0..c {
-                    dot += h[j] * w_hc[j * num_choices + k];
+            for bi in 0..b {
+                let q_out_bi = &quat_head_out[bi * out_quat * 4..(bi + 1) * out_quat * 4];
+
+                // Choice logits from real parts w of output quaternions 0..4
+                for k in 0..num_choices {
+                    choice_logits[bi * num_choices + k] = q_out_bi[k * 4];
                 }
-                choice_logits[bi * num_choices + k] = dot;
-            }
 
-            // Noul Head
-            let mut dot_n = 0.0f32;
-            for j in 0..c {
-                dot_n += h[j] * w_hn[j];
-            }
-            noul_logits[bi] = dot_n;
+                // Noul logit from real part w of output quaternion 4
+                noul_logits[bi] = q_out_bi[4 * 4];
 
-            // Score Head: mapped to [1.0, 5.0] via 3.0 + 2.0 * tanh(dot / 2.0)
-            let mut dot_s = 0.0f32;
-            for j in 0..c {
-                dot_s += h[j] * w_hs[j];
+                // Score prediction from real part w of output quaternion 5
+                let s_dot = q_out_bi[5 * 4];
+                score_preds[bi] = 3.0 + 2.0 * (s_dot * 0.5).tanh();
             }
-            score_preds[bi] = 3.0 + 2.0 * (dot_s * 0.5).tanh();
+        } else {
+            let w_hc =
+                &self.params[self.offset_head_choice..self.offset_head_choice + c * num_choices];
+            let w_hn = &self.params[self.offset_head_noul..self.offset_head_noul + c];
+            let w_hs = &self.params[self.offset_head_score..self.offset_head_score + c];
+
+            for bi in 0..b {
+                let h = &pooled[bi * c..(bi + 1) * c];
+
+                // Choice Head
+                for k in 0..num_choices {
+                    let mut dot = 0.0f32;
+                    for j in 0..c {
+                        dot += h[j] * w_hc[j * num_choices + k];
+                    }
+                    choice_logits[bi * num_choices + k] = dot;
+                }
+
+                // Noul Head
+                let mut dot_n = 0.0f32;
+                for j in 0..c {
+                    dot_n += h[j] * w_hn[j];
+                }
+                noul_logits[bi] = dot_n;
+
+                // Score Head: mapped to [1.0, 5.0] via 3.0 + 2.0 * tanh(dot / 2.0)
+                let mut dot_s = 0.0f32;
+                for j in 0..c {
+                    dot_s += h[j] * w_hs[j];
+                }
+                score_preds[bi] = 3.0 + 2.0 * (dot_s * 0.5).tanh();
+            }
         }
 
         ForwardCache {
@@ -395,6 +474,7 @@ impl DecisionModel {
             choice_logits,
             noul_logits,
             score_preds,
+            quat_head_out,
         }
     }
 
@@ -418,41 +498,82 @@ impl DecisionModel {
 
         // 1. Compute gradients from decision heads -> d_pooled [B, C]
         let mut d_pooled = vec![0.0f32; b * c];
-        let w_hc = &self.params[self.offset_head_choice..self.offset_head_choice + c * num_choices];
-        let w_hn = &self.params[self.offset_head_noul..self.offset_head_noul + c];
-        let w_hs = &self.params[self.offset_head_score..self.offset_head_score + c];
 
-        for bi in 0..b {
-            let h = &cache.pooled[bi * c..(bi + 1) * c];
-            let dh = &mut d_pooled[bi * c..(bi + 1) * c];
+        if self.config.use_quaternion_head {
+            let in_quat = c / 4;
+            let out_quat = 6;
+            let mut d_quat_out = vec![0.0f32; b * out_quat * 4];
 
-            // Choice head backward pass
-            let d_cl = &dchoice_logits[bi * num_choices..(bi + 1) * num_choices];
-            for j in 0..c {
-                let mut sum_dh = 0.0f32;
+            for bi in 0..b {
+                let d_q_bi = &mut d_quat_out[bi * out_quat * 4..(bi + 1) * out_quat * 4];
+
+                // Choice head gradients -> d_loss / d(w_k) for k in 0..4
+                let d_cl = &dchoice_logits[bi * num_choices..(bi + 1) * num_choices];
                 for k in 0..num_choices {
-                    sum_dh += d_cl[k] * w_hc[j * num_choices + k];
-                    self.grads[self.offset_head_choice + j * num_choices + k] += h[j] * d_cl[k];
+                    d_q_bi[k * 4] = d_cl[k]; // w-component
                 }
-                dh[j] += sum_dh;
+
+                // Noul head gradient -> d_loss / d(w_4)
+                d_q_bi[4 * 4] = dnoul_logits[bi];
+
+                // Score head gradient -> d_loss / d(w_5)
+                // y = 3.0 + 2.0 * tanh(s_dot * 0.5)
+                let tanh_u = (cache.score_preds[bi] - 3.0) / 2.0;
+                let d_dots = dscore_preds[bi] * (1.0 - tanh_u * tanh_u);
+                d_q_bi[5 * 4] = d_dots;
             }
 
-            // Noul head backward pass
-            let d_nl = dnoul_logits[bi];
-            for j in 0..c {
-                dh[j] += d_nl * w_hn[j];
-                self.grads[self.offset_head_noul + j] += h[j] * d_nl;
-            }
+            let w_quat =
+                &self.params[self.offset_head_quat..self.offset_head_quat + out_quat * in_quat * 4];
+            let d_w_quat = &mut self.grads
+                [self.offset_head_quat..self.offset_head_quat + out_quat * in_quat * 4];
 
-            // Score head backward pass: y = 3.0 + 2.0 * tanh(u), u = 0.5 * (h . w_hs)
-            // dy/du = 2.0 * (1 - tanh(u)^2)
-            // du/d(dot_s) = 0.5
-            // dy/d(dot_s) = 1 - tanh(u)^2 = 1 - ((y - 3.0)/2.0)^2
-            let tanh_u = (cache.score_preds[bi] - 3.0) / 2.0;
-            let d_dots = dscore_preds[bi] * (1.0 - tanh_u * tanh_u);
-            for j in 0..c {
-                dh[j] += d_dots * w_hs[j];
-                self.grads[self.offset_head_score + j] += h[j] * d_dots;
+            QuaternionLinear::backward(
+                &mut d_pooled,
+                d_w_quat,
+                None,
+                &d_quat_out,
+                &cache.pooled,
+                w_quat,
+                b,
+                in_quat,
+                out_quat,
+            );
+        } else {
+            let w_hc =
+                &self.params[self.offset_head_choice..self.offset_head_choice + c * num_choices];
+            let w_hn = &self.params[self.offset_head_noul..self.offset_head_noul + c];
+            let w_hs = &self.params[self.offset_head_score..self.offset_head_score + c];
+
+            for bi in 0..b {
+                let h = &cache.pooled[bi * c..(bi + 1) * c];
+                let dh = &mut d_pooled[bi * c..(bi + 1) * c];
+
+                // Choice head backward pass
+                let d_cl = &dchoice_logits[bi * num_choices..(bi + 1) * num_choices];
+                for j in 0..c {
+                    let mut sum_dh = 0.0f32;
+                    for k in 0..num_choices {
+                        sum_dh += d_cl[k] * w_hc[j * num_choices + k];
+                        self.grads[self.offset_head_choice + j * num_choices + k] += h[j] * d_cl[k];
+                    }
+                    dh[j] += sum_dh;
+                }
+
+                // Noul head backward pass
+                let d_nl = dnoul_logits[bi];
+                for j in 0..c {
+                    dh[j] += d_nl * w_hn[j];
+                    self.grads[self.offset_head_noul + j] += h[j] * d_nl;
+                }
+
+                // Score head backward pass: y = 3.0 + 2.0 * tanh(u), u = 0.5 * (h . w_hs)
+                let tanh_u = (cache.score_preds[bi] - 3.0) / 2.0;
+                let d_dots = dscore_preds[bi] * (1.0 - tanh_u * tanh_u);
+                for j in 0..c {
+                    dh[j] += d_dots * w_hs[j];
+                    self.grads[self.offset_head_score + j] += h[j] * d_dots;
+                }
             }
         }
 

@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut reset_mode = false;
     let mut add_steps_arg: Option<usize> = None;
+    let mut quaternion_head_mode = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -45,6 +46,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--reset" => {
                 reset_mode = true;
+            }
+            "--quaternion-head" => {
+                quaternion_head_mode = true;
             }
             "--batch-size" => {
                 if let Some(v) = args.get(i + 1) {
@@ -87,14 +91,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = DecisionConfig {
         vocab_size: tokenizer.vocab_size(),
-        seq_len: 128,
-        dim: 128,
-        num_layers: 4,
-        num_heads: 4,
-        head_dim: 32,
-        ffn_dim: 256,
-        num_choices: 4,
-        temperature: 1.0,
+        use_quaternion_head: quaternion_head_mode,
+        ..Default::default()
     };
 
     let mut rng = DeterministicRng::new(seed);

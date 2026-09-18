@@ -47,6 +47,7 @@ fn test_forward_dimensions_and_properties() {
         ffn_dim: 64,
         num_choices: 4,
         temperature: 1.0,
+        use_quaternion_head: false,
     };
 
     let mut rng = DeterministicRng::new(123);
@@ -84,6 +85,7 @@ fn test_finite_difference_gradcheck() {
         ffn_dim: 16,
         num_choices: 2,
         temperature: 1.0,
+        use_quaternion_head: false,
     };
 
     let mut rng = DeterministicRng::new(999);
@@ -156,6 +158,7 @@ fn test_single_step_optimization() {
         ffn_dim: 32,
         num_choices: 3,
         temperature: 1.0,
+        use_quaternion_head: false,
     };
 
     let mut rng = DeterministicRng::new(42);
@@ -213,4 +216,88 @@ fn test_single_step_optimization() {
 
     println!("Step 1 Loss: {:.4} -> Step 2 Loss: {:.4}", loss1, loss2);
     assert!(loss2 < loss1, "Loss must decrease after AdamW step!");
+}
+
+#[test]
+fn test_quaternion_head_gradcheck() {
+    let config = DecisionConfig {
+        vocab_size: 20,
+        seq_len: 4,
+        dim: 8, // 2 input quaternions
+        num_layers: 1,
+        num_heads: 2,
+        head_dim: 4,
+        ffn_dim: 16,
+        num_choices: 4, // 4 choices supported by Quaternion Head
+        temperature: 1.0,
+        use_quaternion_head: true,
+    };
+
+    let mut rng = DeterministicRng::new(888);
+    let mut model = DecisionModel::new(config.clone(), &mut rng);
+
+    let b = 1;
+    let t = 4;
+    let tokens: Vec<u16> = vec![2, 4, 6, 8];
+    let target_choice = 2usize;
+    let target_noul = true;
+    let target_score = 3.2f32;
+
+    model.zero_grad();
+    let cache = model.forward(&tokens, b, t);
+
+    let (_l_c, d_c) = LossCalculator::choice_loss(&cache.choice_logits, target_choice, 4, 0.0);
+    let (_l_n, d_n) = LossCalculator::noul_loss(cache.noul_logits[0], target_noul, 0.0);
+    let (_l_s, d_s) = LossCalculator::score_loss(cache.score_preds[0], target_score, 0.5);
+
+    model.backward(&tokens, &cache, &d_c, &[d_n], &[d_s], b, t);
+
+    // Test a parameter in the quaternion head
+    let test_param_idx = model.offset_head_quat + 3;
+    let analytic_grad = model.grads[test_param_idx];
+
+    let eps = 1e-3f32;
+    model.params[test_param_idx] += eps;
+    let cache_p = model.forward(&tokens, b, t);
+    let (l_c_p, _) = LossCalculator::choice_loss(&cache_p.choice_logits, target_choice, 4, 0.0);
+    let (l_n_p, _) = LossCalculator::noul_loss(cache_p.noul_logits[0], target_noul, 0.0);
+    let (l_s_p, _) = LossCalculator::score_loss(cache_p.score_preds[0], target_score, 0.5);
+    let loss_plus = l_c_p + l_n_p + l_s_p;
+
+    model.params[test_param_idx] -= 2.0 * eps;
+    let cache_m = model.forward(&tokens, b, t);
+    let (l_c_m, _) = LossCalculator::choice_loss(&cache_m.choice_logits, target_choice, 4, 0.0);
+    let (l_n_m, _) = LossCalculator::noul_loss(cache_m.noul_logits[0], target_noul, 0.0);
+    let (l_s_m, _) = LossCalculator::score_loss(cache_m.score_preds[0], target_score, 0.5);
+    let loss_minus = l_c_m + l_n_m + l_s_m;
+
+    model.params[test_param_idx] += eps;
+
+    let numerical_grad = (loss_plus - loss_minus) / (2.0 * eps);
+    let diff = (analytic_grad - numerical_grad).abs();
+    assert!(
+        diff < 5e-3 || diff / (analytic_grad.abs() + numerical_grad.abs()).max(1e-5) < 0.05,
+        "Quaternion head gradcheck failed! Analytic: {}, Numerical: {}, Diff: {}",
+        analytic_grad,
+        numerical_grad,
+        diff
+    );
+}
+
+#[test]
+fn test_checkpoint_backward_compatibility_with_quaternion_field() {
+    // Verify JSON without use_quaternion_head deserializes seamlessly with false
+    let json_str = r#"{
+        "vocab_size": 4721,
+        "seq_len": 128,
+        "dim": 128,
+        "num_layers": 4,
+        "num_heads": 4,
+        "head_dim": 32,
+        "ffn_dim": 256,
+        "num_choices": 4,
+        "temperature": 1.0
+    }"#;
+    let config: DecisionConfig = serde_json::from_str(json_str).expect("Must deserialize");
+    assert!(!config.use_quaternion_head);
 }
