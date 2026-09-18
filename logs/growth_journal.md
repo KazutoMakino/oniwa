@@ -52,4 +52,11 @@
 - **Verification**:
   - Finite difference gradient check verified across weights, inputs, and biases.
   - Initial 5-step test converged from Loss 3.3552 to 2.0930 with 100% test suite green.
+- **Run 3: 300-step Quaternion Head Run (`--quaternion-head`)**:
+  - **Best Loss**: **0.8798** at Step 175 (Choice Acc: 100.0%, Noul Acc: 87.5%, Score MAE: 0.207)
+  - **Final Loss**: 1.0025 at Step 300
+  - **Energy**: ~1.90 Wh net energy on Raspberry Pi 4 (~3.5W)
+  - **Checkpoint SHA-256**: `5442a19f6322fc7e8443a511c3ff5de763e619504cdbd7dc0cf89eeee47f7d48`
+  - **Key Observation**: Reached 0.87 loss in only 175 steps with 4x parameter efficiency, demonstrating that non-commutative rotational features can accelerate structured decision convergence.
+
 
