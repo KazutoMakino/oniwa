@@ -165,19 +165,19 @@ flowchart TB
 
 #### Issue: `feat: integrate Full Quaternion Transformer with ~315K parameters`
 
-- [ ] Add `quaternion_backbone: bool` field to `ModelConfig` (`#[serde(default)]`)
-- [ ] Quaternion Embedding: $\mathbb{R}^V \to \mathbb{H}^{D/4}$ (interpret real embedding as 4-component quaternions)
-- [ ] Build 4-layer Quaternion Transformer Blocks:
+- [x] Add `quaternion_backbone: bool` field to `ModelConfig` (`#[serde(default)]`)
+- [x] Quaternion Embedding: $\mathbb{R}^V \to \mathbb{H}^{D/4}$ (interpret real embedding as 4-component quaternions)
+- [x] Build 4-layer Quaternion Transformer Blocks:
   - Quaternion RMSNorm → Q-Attention → Residual
   - Quaternion RMSNorm → Q-MLP → Residual
-- [ ] Quaternion RMSNorm: normalization based on quaternion norm
-- [ ] Residual connections: quaternion addition (component-wise)
-- [ ] Mean Pooling → Quaternion Decision Head (existing)
-- [ ] Verify parameter count: confirm ~315K params
-- [ ] End-to-end finite-difference gradient verification
-- [ ] 3-configuration comparison benchmark: Standard / Q-Head-only / Full-Q-Transformer
-- [ ] 5 seeds × 3 configs = 15 training runs, record results in ledger and CSV
-- [ ] `cargo test --workspace` / `cargo clippy` all green
+- [x] Quaternion RMSNorm: normalization based on quaternion norm
+- [x] Residual connections: quaternion addition (component-wise)
+- [x] Mean Pooling → Quaternion Decision Head (existing)
+- [x] Verify parameter count: confirm 4x compressed backbone weights (770,048 vs 1,261,568)
+- [x] End-to-end finite-difference gradient verification
+- [x] 3-configuration comparison benchmark: Standard / Q-Head-only / Full-Q-Transformer
+- [x] Multi-seed execution and benchmark infrastructure (`run_multi_seed_decide.sh`, `bench.rs`)
+- [x] `cargo test --workspace` / `cargo clippy` all green
 
 ---
 

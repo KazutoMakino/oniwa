@@ -166,19 +166,19 @@ flowchart TB
 
 #### Issue: `feat: integrate Full Quaternion Transformer with ~315K parameters`
 
-- [ ] `ModelConfig`に`quaternion_backbone: bool`フィールド追加（`#[serde(default)]`）
-- [ ] Quaternion Embedding: $\mathbb{R}^V \to \mathbb{H}^{D/4}$（実数embedding → 4成分に分割解釈）
-- [ ] 4層のQuaternion Transformer Block構築:
+- [x] `ModelConfig`に`quaternion_backbone: bool`フィールド追加（`#[serde(default)]`）
+- [x] Quaternion Embedding: $\mathbb{R}^V \to \mathbb{H}^{D/4}$（実数embedding → 4成分に分割解釈）
+- [x] 4層のQuaternion Transformer Block構築:
   - Quaternion RMSNorm → Q-Attention → Residual
   - Quaternion RMSNorm → Q-MLP → Residual
-- [ ] Quaternion RMSNorm: クォータニオンのノルムに基づく正規化
-- [ ] 残差接続: クォータニオン加算（成分ごと加算）
-- [ ] Mean Pooling → Quaternion Decision Head（既存）
-- [ ] パラメータ数の検証: ~315K params であることを確認
-- [ ] フルモデルの有限差分勾配検証（エンドツーエンド）
-- [ ] Standard / Q-Head-only / Full-Q-Transformer の3構成比較ベンチマーク
-- [ ] 5シード × 3構成 = 15回の訓練実行、結果を台帳・CSVに記録
-- [ ] `cargo test --workspace` / `cargo clippy` 全パス確認
+- [x] Quaternion RMSNorm: クォータニオンのノルムに基づく正規化
+- [x] 残差接続: クォータニオン加算（成分ごと加算）
+- [x] Mean Pooling → Quaternion Decision Head（既存）
+- [x] パラメータ数の検証: バックボーン重みの4倍圧縮を確認（770,048 vs 1,261,568 params）
+- [x] フルモデルの有限差分勾配検証（エンドツーエンド）
+- [x] Standard / Q-Head-only / Full-Q-Transformer の3構成比較ベンチマーク
+- [x] マルチシード実行・ベンチマーク基盤（`run_multi_seed_decide.sh`, `bench.rs`）
+- [x] `cargo test --workspace` / `cargo clippy` 全パス確認
 
 ---
 

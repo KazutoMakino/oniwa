@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut reset_mode = false;
     let mut add_steps_arg: Option<usize> = None;
     let mut quaternion_head_mode = false;
-    let mut config_mode = "standard".to_string(); // "standard", "quaternion_head", "iso_parameter"
+    let mut config_mode = "standard".to_string(); // "standard", "quaternion_head", "full_quaternion", "iso_parameter"
     let mut custom_checkpoint_dir: Option<std::path::PathBuf> = None;
     let mut metrics_path: Option<std::path::PathBuf> = None;
 
@@ -108,6 +108,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (dir.join("latest"), dir.join("best"))
     } else {
         match config_mode.as_str() {
+            "full_quaternion" => (
+                base_dir.join("checkpoints/full_quaternion/latest"),
+                base_dir.join("checkpoints/full_quaternion/best"),
+            ),
             "quaternion_head" => (
                 base_dir.join("checkpoints/quaternion_head/latest"),
                 base_dir.join("checkpoints/quaternion_head/best"),
@@ -133,6 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dataset = DatasetGenerator::load_from_corpus_dir(&corpus_dir)?;
 
     let config = match config_mode.as_str() {
+        "full_quaternion" => DecisionConfig::full_quaternion_transformer(tokenizer.vocab_size()),
         "quaternion_head" => DecisionConfig::quaternion_head(tokenizer.vocab_size()),
         "iso_parameter" => DecisionConfig::iso_parameter(tokenizer.vocab_size()),
         _ => {

@@ -69,6 +69,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             DecisionConfig::quaternion_head(tokenizer.vocab_size()),
         ),
         (
+            "Full Quaternion",
+            DecisionConfig::full_quaternion_transformer(tokenizer.vocab_size()),
+        ),
+        (
             "Iso-Parameter Real",
             DecisionConfig::iso_parameter(tokenizer.vocab_size()),
         ),
