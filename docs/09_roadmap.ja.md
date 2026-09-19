@@ -123,22 +123,22 @@ flowchart TB
 
 #### Issue: `feat: implement Quaternion Self-Attention with GHR calculus gradients`
 
-- [ ] `src/layers/quaternion_attention.rs`を新規作成
-- [ ] Q, K, Vの投影を`QuaternionLinear`で実装（`dim/4`クォータニオン → `dim/4`クォータニオン）
+- [x] `src/layers/quaternion_attention.rs`を新規作成
+- [x] Q, K, Vの投影を`QuaternionLinear`で実装（`dim/4`クォータニオン → `dim/4`クォータニオン）
   - 入力: $h \in \mathbb{R}^{B \times T \times D}$ を $\mathbb{H}^{B \times T \times D/4}$ として解釈
   - $Q = W_Q \otimes h$, $K = W_K \otimes h$, $V = W_V \otimes h$（Hamilton積）
-- [ ] Attention Score計算: クォータニオン内積（実数部のみ取得）
+- [x] Attention Score計算: クォータニオン内積（実数部のみ取得）
   - $\text{score}(q_i, k_j) = \text{Re}(q_i \otimes k_j^*) / \sqrt{d_h}$
   - → 単一softmax（Shared-Score方式、ICML 2026 Yamauchi et al.着想）
-- [ ] 双方向（マスクなし）Attention: 既存の`oniwa-decide`と同様
-- [ ] RoPE（Rotary Position Embedding）のクォータニオン空間での適用
-- [ ] 出力投影: `QuaternionLinear`で$\mathbb{H}^{D/4} \to \mathbb{H}^{D/4}$
-- [ ] GHRカルキュラスによる解析的勾配の導出と実装
+- [x] 双方向（マスクなし）Attention: 既存の`oniwa-decide`と同様
+- [x] RoPE（Rotary Position Embedding）のクォータニオン空間での適用
+- [x] 出力投影: `QuaternionLinear`で$\mathbb{H}^{D/4} \to \mathbb{H}^{D/4}$
+- [x] GHRカルキュラスによる解析的勾配の導出と実装
   - $\nabla_{W_Q} L = \nabla_Q L \otimes h^*$
   - $\nabla_h L = W_Q^* \otimes \nabla_Q L + W_K^* \otimes \nabla_K L + W_V^* \otimes \nabla_V L$
-- [ ] 有限差分勾配検証テスト（$|g_\text{ana} - g_\text{num}| < 5 \times 10^{-3}$）
-- [ ] 既存の実数Attention（`layers/attention.rs`）との切り替え可能な設計
-- [ ] `cargo test --workspace` / `cargo clippy` 全パス確認
+- [x] 有限差分勾配検証テスト（$|g_\text{ana} - g_\text{num}| < 5 \times 10^{-3}$）
+- [x] 既存の実数Attention（`layers/attention.rs`）との切り替え可能な設計
+- [x] `cargo test --workspace` / `cargo clippy` 全パス確認
 
 ---
 
