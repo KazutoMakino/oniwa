@@ -4,7 +4,7 @@
 
 use oniwa_lm::benchmark::run_benchmark;
 use oniwa_lm::logger::{ModelConfigInfo, TrainingManifest, TrainingStepLog};
-use oniwa_lm::model::{ModelConfig, ModelWeights};
+use oniwa_lm::model::{LanguageModel, ModelConfig, ModelWeights, QuaternionModelWeights};
 use oniwa_lm::power::PowerTracker;
 use oniwa_lm::reproducibility::{compute_checksum_bytes, compute_checksum_f32, DeterministicRng};
 use oniwa_lm::thermal::{ThermalConfig, ThermalController};
@@ -56,6 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut weight_tying_arg: Option<bool> = None;
     let mut bpe_mode = false;
     let mut bpe_vocab_size = 4096usize;
+    let mut quaternion_mode = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -146,6 +147,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     bpe_mode = true;
                     i += 1;
                 }
+            }
+            "--quaternion" => {
+                quaternion_mode = true;
             }
             _ => {}
         }
@@ -253,10 +257,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[2/4] ⚙️ Initializing model & deterministic seed (oniwa-v3)...");
     let mut rng = DeterministicRng::new(seed);
 
-    let checkpoint_dir = base_dir.join("checkpoints").join("latest");
-    let best_checkpoint_dir = base_dir.join("checkpoints").join("best");
+    let checkpoint_dir = if quaternion_mode {
+        base_dir
+            .join("checkpoints")
+            .join("quaternion")
+            .join("latest")
+    } else {
+        base_dir.join("checkpoints").join("latest")
+    };
+    let best_checkpoint_dir = if quaternion_mode {
+        base_dir.join("checkpoints").join("quaternion").join("best")
+    } else {
+        base_dir.join("checkpoints").join("best")
+    };
 
-    // Restore config from meta.json if checkpoint exists, otherwise use v2 default
+    // Restore config from meta.json if checkpoint exists, otherwise use default
     let mut config = if !reset_mode && checkpoint_dir.join("meta.json").exists() {
         match ModelConfig::from_meta_json(checkpoint_dir.join("meta.json")) {
             Ok(mut c) => {
@@ -295,17 +310,101 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.weight_tying = wt;
     }
 
-    let mut model = ModelWeights::new(config.clone(), &mut rng);
-    let total_params = model.params.len();
+    enum TrainedModel {
+        Real(ModelWeights),
+        Quaternion(QuaternionModelWeights),
+    }
+
+    impl LanguageModel for TrainedModel {
+        fn config(&self) -> &ModelConfig {
+            match self {
+                Self::Real(m) => m.config(),
+                Self::Quaternion(m) => m.config(),
+            }
+        }
+        fn params(&self) -> &[f32] {
+            match self {
+                Self::Real(m) => m.params(),
+                Self::Quaternion(m) => m.params(),
+            }
+        }
+        fn zero_grad(&mut self) {
+            match self {
+                Self::Real(m) => m.zero_grad(),
+                Self::Quaternion(m) => m.zero_grad(),
+            }
+        }
+        fn forward_backward(&mut self, x: &[u16], y: &[u16], b: usize, t: usize) -> (f32, f32) {
+            match self {
+                Self::Real(m) => m.forward_backward(x, y, b, t),
+                Self::Quaternion(m) => m.forward_backward(x, y, b, t),
+            }
+        }
+        fn evaluate_loss(&self, x: &[u16], y: &[u16], b: usize, t: usize) -> f32 {
+            match self {
+                Self::Real(m) => m.evaluate_loss(x, y, b, t),
+                Self::Quaternion(m) => m.evaluate_loss(x, y, b, t),
+            }
+        }
+        fn evaluate_loss_and_top_k(
+            &self,
+            x: &[u16],
+            y: &[u16],
+            b: usize,
+            t: usize,
+            k: usize,
+        ) -> (f32, f32) {
+            match self {
+                Self::Real(m) => m.evaluate_loss_and_top_k(x, y, b, t, k),
+                Self::Quaternion(m) => m.evaluate_loss_and_top_k(x, y, b, t, k),
+            }
+        }
+        fn forward_inference(&self, tokens: &[u16]) -> Vec<f32> {
+            match self {
+                Self::Real(m) => m.forward_inference(tokens),
+                Self::Quaternion(m) => m.forward_inference(tokens),
+            }
+        }
+        fn adamw_step(&mut self, lr: f32, wd: f32, beta1: f32, beta2: f32, eps: f32, step: usize) {
+            match self {
+                Self::Real(m) => m.adamw_step(lr, wd, beta1, beta2, eps, step),
+                Self::Quaternion(m) => m.adamw_step(lr, wd, beta1, beta2, eps, step),
+            }
+        }
+        fn save_checkpoint<P: AsRef<std::path::Path>>(
+            &self,
+            dir: P,
+            step: usize,
+            loss: f32,
+            seed: u64,
+        ) -> std::io::Result<()> {
+            match self {
+                Self::Real(m) => m.save_checkpoint(dir, step, loss, seed),
+                Self::Quaternion(m) => m.save_checkpoint(dir, step, loss, seed),
+            }
+        }
+    }
+
+    let mut model = if quaternion_mode {
+        TrainedModel::Quaternion(QuaternionModelWeights::new(config.clone(), &mut rng))
+    } else {
+        TrainedModel::Real(ModelWeights::new(config.clone(), &mut rng))
+    };
+    let total_params = model.params().len();
     println!(
         "  - Architecture: seq_len {} chars, dim {}, layers {}, attention heads {}",
         config.seq_len, config.dim, config.num_layers, config.num_heads
     );
     println!(
-        "  - Total parameters: {} (~{:.2} M params, Weight Tying: {})",
+        "  - Total parameters: {} (~{:.2} M params, Weight Tying: {}, Mode: {})",
         total_params,
         total_params as f32 / 1_000_000.0,
-        config.weight_tying
+        config.weight_tying,
+        if quaternion_mode {
+            "QuaternionLMHead"
+        } else {
+            "Standard Real"
+        }
     );
     println!(
         "  - Regularization / Loss: Label Smoothing ({:.2}) + Z-loss ({:e})",
@@ -329,7 +428,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !reset_mode && checkpoint_dir.exists() && checkpoint_dir.join("meta.json").exists() {
         println!("  🔄 Existing checkpoint detected! Attempting to resume...");
-        match model.load_checkpoint(&checkpoint_dir) {
+        let load_res = match &mut model {
+            TrainedModel::Real(m) => m.load_checkpoint(&checkpoint_dir),
+            TrainedModel::Quaternion(m) => m.load_checkpoint(&checkpoint_dir),
+        };
+        match load_res {
             Ok((resumed_step, resumed_loss, resumed_seed)) => {
                 start_step = resumed_step + 1;
                 current_seed = resumed_seed;
@@ -360,7 +463,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    let init_checksum = compute_checksum_f32(&model.params);
+    let init_checksum = compute_checksum_f32(model.params());
     println!("  - Weights SHA-256: {}...", &init_checksum[..16]);
     println!("  - Random seed: {}", current_seed);
 
@@ -737,7 +840,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             estimated_power_w: reading.net_watts,
             accumulated_energy_wh: reading.net_accum_wh,
             param_checksum: if step % log_interval == 0 {
-                Some(compute_checksum_f32(&model.params))
+                Some(compute_checksum_f32(model.params()))
             } else {
                 None
             },
@@ -858,7 +961,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let total_elapsed = start_time.elapsed();
-    let final_checksum = compute_checksum_f32(&model.params);
+    let final_checksum = compute_checksum_f32(model.params());
     let net_wh = power_tracker.total_net_wh();
     let gross_wh = power_tracker.total_gross_wh();
     let net_co2_g = power_tracker.equivalent_co2_grams();
@@ -942,8 +1045,8 @@ fn compute_cosine_lr(
 }
 
 /// Autoregressively sample specified number of tokens from prompt
-fn generate_sample<T: Tokenizer>(
-    model: &ModelWeights,
+fn generate_sample<M: LanguageModel, T: Tokenizer>(
+    model: &M,
     tokenizer: &T,
     prompt: &str,
     max_tokens: usize,
@@ -953,7 +1056,7 @@ fn generate_sample<T: Tokenizer>(
     if tokens.is_empty() {
         tokens.push(0);
     }
-    let seq_len = model.config.seq_len;
+    let seq_len = model.config().seq_len;
 
     for _ in 0..max_tokens {
         let context_start = tokens.len().saturating_sub(seq_len);

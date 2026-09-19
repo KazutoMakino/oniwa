@@ -25,6 +25,7 @@ pub use profiler::{HardwareProfileRecord, LatencyStats, MemoryProfile};
 pub use quaternion::Quaternion;
 pub use sensor::{SemanticSensor, StateEmbedding};
 use serde::{Deserialize, Serialize};
+pub use simd::*;
 use std::path::Path;
 
 /// Categorical choice decision primitive

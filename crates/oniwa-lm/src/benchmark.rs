@@ -5,7 +5,7 @@
 //! 2. Cloze Test Suite (Literature and code questions)
 //! 3. Syntactic validity scores (bracket balance rate & repetition suppression rate)
 
-use crate::model::ModelWeights;
+use crate::model::LanguageModel;
 use crate::reproducibility::DeterministicRng;
 use crate::tokenizer::Tokenizer;
 use serde::{Deserialize, Serialize};
@@ -245,8 +245,8 @@ pub fn all_cloze_questions() -> Vec<ClozeQuestion> {
 }
 
 /// Evaluate cloze test suite
-pub fn evaluate_cloze_suite<T: Tokenizer>(
-    model: &ModelWeights,
+pub fn evaluate_cloze_suite<M: LanguageModel, T: Tokenizer>(
+    model: &M,
     tokenizer: &T,
     questions: &[ClozeQuestion],
 ) -> (f32, f32, Vec<ClozeDetail>) {
@@ -265,7 +265,7 @@ pub fn evaluate_cloze_suite<T: Tokenizer>(
         let target_id = target_id_opt.unwrap() as usize;
 
         // Truncate context to seq_len
-        let context_start = tokens.len().saturating_sub(model.config.seq_len);
+        let context_start = tokens.len().saturating_sub(model.config().seq_len);
         let context = &tokens[context_start..];
         let logits = model.forward_inference(context);
 
@@ -537,8 +537,8 @@ pub fn evaluate_syntactic_health(texts: &[String]) -> (f32, f32, f32, f32, f32) 
 }
 
 /// Comprehensive multi-axis benchmark execution (literature + code)
-pub fn run_benchmark<T: Tokenizer>(
-    model: &ModelWeights,
+pub fn run_benchmark<M: LanguageModel, T: Tokenizer>(
+    model: &M,
     tokenizer: &T,
     val_tokens: &[u16],
     generated_samples: &[String],
@@ -550,7 +550,7 @@ pub fn run_benchmark<T: Tokenizer>(
     let (val_loss, top5_accuracy) = evaluate_validation_metrics(
         model,
         val_tokens,
-        model.config.seq_len,
+        model.config().seq_len,
         batch_size,
         num_eval_batches,
         5,
@@ -592,8 +592,8 @@ pub fn run_benchmark<T: Tokenizer>(
 }
 
 /// Sample minibatches from validation dataset to compute validation loss and Top-k accuracy
-pub fn evaluate_validation_metrics(
-    model: &ModelWeights,
+pub fn evaluate_validation_metrics<M: LanguageModel>(
+    model: &M,
     val_tokens: &[u16],
     seq_len: usize,
     batch_size: usize,
@@ -628,7 +628,7 @@ pub fn evaluate_validation_metrics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::ModelConfig;
+    use crate::model::{ModelConfig, ModelWeights};
     use crate::tokenizer::CharTokenizer;
 
     #[test]

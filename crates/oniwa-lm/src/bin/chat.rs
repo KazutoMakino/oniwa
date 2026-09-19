@@ -4,7 +4,7 @@
 //! text generation and experimentation directly in the terminal.
 
 use oniwa_lm::logger::{InferenceLog, ProvenanceEvent, ProvenanceLedger};
-use oniwa_lm::model::{ModelConfig, ModelWeights};
+use oniwa_lm::model::{LanguageModel, ModelConfig, ModelWeights, QuaternionModelWeights};
 use oniwa_lm::reproducibility::{compute_checksum_f32, DeterministicRng};
 use oniwa_lm::tokenizer::CharTokenizer;
 use std::io::{self, Write};
@@ -25,9 +25,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let vocab_path = data_dir.join("vocab.json");
 
-    // Parse command-line arguments (--checkpoint best / latest)
+    // Parse command-line arguments (--checkpoint best / latest, --quaternion)
     let args: Vec<String> = std::env::args().collect();
     let mut requested_checkpoint: Option<String> = None;
+    let mut quaternion_mode = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -43,25 +44,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--latest" => {
                 requested_checkpoint = Some("latest".to_string());
             }
+            "--quaternion" => {
+                quaternion_mode = true;
+            }
             _ => {}
         }
         i += 1;
     }
 
-    let best_dir = base_dir.join("checkpoints").join("best");
-    let latest_dir = base_dir.join("checkpoints").join("latest");
+    let (best_dir, latest_dir) = if quaternion_mode {
+        (
+            base_dir.join("checkpoints").join("quaternion").join("best"),
+            base_dir
+                .join("checkpoints")
+                .join("quaternion")
+                .join("latest"),
+        )
+    } else {
+        (
+            base_dir.join("checkpoints").join("best"),
+            base_dir.join("checkpoints").join("latest"),
+        )
+    };
 
     let (checkpoint_dir, checkpoint_tag) = match requested_checkpoint.as_deref() {
-        Some("best") => (best_dir, "🏆 Best Model (checkpoints/best)"),
-        Some("latest") => (latest_dir, "⏱️ Latest Model (checkpoints/latest)"),
+        Some("best") => (
+            best_dir,
+            if quaternion_mode {
+                "🏆 Best Quaternion Model (checkpoints/quaternion/best)"
+            } else {
+                "🏆 Best Model (checkpoints/best)"
+            },
+        ),
+        Some("latest") => (
+            latest_dir,
+            if quaternion_mode {
+                "⏱️ Latest Quaternion Model (checkpoints/quaternion/latest)"
+            } else {
+                "⏱️ Latest Model (checkpoints/latest)"
+            },
+        ),
         Some(custom) => (base_dir.join(custom), "📁 Custom Checkpoint"),
         None => {
             if best_dir.join("meta.json").exists() {
-                (best_dir, "🏆 Best Model (checkpoints/best: auto-selected)")
+                (
+                    best_dir,
+                    if quaternion_mode {
+                        "🏆 Best Quaternion Model (checkpoints/quaternion/best: auto-selected)"
+                    } else {
+                        "🏆 Best Model (checkpoints/best: auto-selected)"
+                    },
+                )
             } else {
                 (
                     latest_dir,
-                    "⏱️ Latest Model (checkpoints/latest: auto-selected)",
+                    if quaternion_mode {
+                        "⏱️ Latest Quaternion Model (checkpoints/quaternion/latest: auto-selected)"
+                    } else {
+                        "⏱️ Latest Model (checkpoints/latest: auto-selected)"
+                    },
                 )
             }
         }
@@ -101,16 +142,99 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut rng = DeterministicRng::new(12345);
-    let mut model = ModelWeights::new(config.clone(), &mut rng);
+
+    enum ChatModel {
+        Real(ModelWeights),
+        Quaternion(QuaternionModelWeights),
+    }
+
+    impl LanguageModel for ChatModel {
+        fn config(&self) -> &ModelConfig {
+            match self {
+                Self::Real(m) => m.config(),
+                Self::Quaternion(m) => m.config(),
+            }
+        }
+        fn params(&self) -> &[f32] {
+            match self {
+                Self::Real(m) => m.params(),
+                Self::Quaternion(m) => m.params(),
+            }
+        }
+        fn zero_grad(&mut self) {
+            match self {
+                Self::Real(m) => m.zero_grad(),
+                Self::Quaternion(m) => m.zero_grad(),
+            }
+        }
+        fn forward_backward(&mut self, x: &[u16], y: &[u16], b: usize, t: usize) -> (f32, f32) {
+            match self {
+                Self::Real(m) => m.forward_backward(x, y, b, t),
+                Self::Quaternion(m) => m.forward_backward(x, y, b, t),
+            }
+        }
+        fn evaluate_loss(&self, x: &[u16], y: &[u16], b: usize, t: usize) -> f32 {
+            match self {
+                Self::Real(m) => m.evaluate_loss(x, y, b, t),
+                Self::Quaternion(m) => m.evaluate_loss(x, y, b, t),
+            }
+        }
+        fn evaluate_loss_and_top_k(
+            &self,
+            x: &[u16],
+            y: &[u16],
+            b: usize,
+            t: usize,
+            k: usize,
+        ) -> (f32, f32) {
+            match self {
+                Self::Real(m) => m.evaluate_loss_and_top_k(x, y, b, t, k),
+                Self::Quaternion(m) => m.evaluate_loss_and_top_k(x, y, b, t, k),
+            }
+        }
+        fn forward_inference(&self, tokens: &[u16]) -> Vec<f32> {
+            match self {
+                Self::Real(m) => m.forward_inference(tokens),
+                Self::Quaternion(m) => m.forward_inference(tokens),
+            }
+        }
+        fn adamw_step(&mut self, lr: f32, wd: f32, beta1: f32, beta2: f32, eps: f32, step: usize) {
+            match self {
+                Self::Real(m) => m.adamw_step(lr, wd, beta1, beta2, eps, step),
+                Self::Quaternion(m) => m.adamw_step(lr, wd, beta1, beta2, eps, step),
+            }
+        }
+        fn save_checkpoint<P: AsRef<std::path::Path>>(
+            &self,
+            dir: P,
+            step: usize,
+            loss: f32,
+            seed: u64,
+        ) -> std::io::Result<()> {
+            match self {
+                Self::Real(m) => m.save_checkpoint(dir, step, loss, seed),
+                Self::Quaternion(m) => m.save_checkpoint(dir, step, loss, seed),
+            }
+        }
+    }
+
+    let mut model = if quaternion_mode {
+        ChatModel::Quaternion(QuaternionModelWeights::new(config.clone(), &mut rng))
+    } else {
+        ChatModel::Real(ModelWeights::new(config.clone(), &mut rng))
+    };
 
     println!(
         "  🔄 Loading checkpoint: {} ({:?})",
         checkpoint_tag, checkpoint_dir
     );
     println!("  - Model specs: seq_len {}, dim {}, num_layers {}, vocab_size {}, params {} (~{:.2} M params)",
-        config.seq_len, config.dim, config.num_layers, config.vocab_size, model.params.len(), model.params.len() as f32 / 1_000_000.0);
-    let (step, loss, _) = model.load_checkpoint(&checkpoint_dir)?;
-    let model_checksum = compute_checksum_f32(&model.params);
+        config.seq_len, config.dim, config.num_layers, config.vocab_size, model.params().len(), model.params().len() as f32 / 1_000_000.0);
+    let (step, loss, _) = match &mut model {
+        ChatModel::Real(m) => m.load_checkpoint(&checkpoint_dir)?,
+        ChatModel::Quaternion(m) => m.load_checkpoint(&checkpoint_dir)?,
+    };
+    let model_checksum = compute_checksum_f32(model.params());
     println!(
         "  ✅ Loaded successfully! (Step: {}, Loss: {:.4})",
         step, loss
@@ -181,8 +305,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Autoregressively generate specified number of tokens from prompt
-fn generate_response(
-    model: &ModelWeights,
+fn generate_response<M: LanguageModel>(
+    model: &M,
     tokenizer: &CharTokenizer,
     prompt: &str,
     max_tokens: usize,
@@ -191,12 +315,12 @@ fn generate_response(
 ) -> String {
     let mut tokens = tokenizer.encode(prompt);
     // Restrict to vocabulary size (safety guard for vocab differences)
-    tokens.retain(|&id| (id as usize) < model.config.vocab_size);
+    tokens.retain(|&id| (id as usize) < model.config().vocab_size);
     if tokens.is_empty() {
         // Fallback to token 0 if all characters are unknown
         tokens.push(0);
     }
-    let seq_len = model.config.seq_len;
+    let seq_len = model.config().seq_len;
 
     for _ in 0..max_tokens {
         let context_start = tokens.len().saturating_sub(seq_len);
