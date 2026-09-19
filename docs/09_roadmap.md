@@ -147,15 +147,15 @@ flowchart TB
 
 #### Issue: `feat: implement Quaternion SwiGLU MLP with Hamilton product projections`
 
-- [ ] Create `src/layers/quaternion_mlp.rs`
-- [ ] Gate/Up projections: `QuaternionLinear` ($\mathbb{H}^{D/4} \to \mathbb{H}^{D_\text{ffn}/4}$)
+- [x] Create `src/layers/quaternion_mlp.rs`
+- [x] Gate/Up projections: `QuaternionLinear` ($\mathbb{H}^{D/4} \to \mathbb{H}^{D_\text{ffn}/4}$)
   - $G = W_\text{gate} \otimes x$, $U = W_\text{up} \otimes x$
-- [ ] SwiGLU activation: $H = \text{SiLU}(G) \odot U$
+- [x] SwiGLU activation: $H = \text{SiLU}(G) \odot U$
   - Apply activation independently to each of the 4 quaternion components
-- [ ] Down projection: `QuaternionLinear` ($\mathbb{H}^{D_\text{ffn}/4} \to \mathbb{H}^{D/4}$)
-- [ ] Analytical backward pass via GHR calculus
-- [ ] Finite-difference gradient verification test
-- [ ] `cargo test --workspace` / `cargo clippy` all green
+- [x] Down projection: `QuaternionLinear` ($\mathbb{H}^{D_\text{ffn}/4} \to \mathbb{H}^{D/4}$)
+- [x] Analytical backward pass via GHR calculus
+- [x] Finite-difference gradient verification test
+- [x] `cargo test --workspace` / `cargo clippy` all green
 
 ---
 
