@@ -263,10 +263,10 @@ flowchart TB
 
 #### Issue: `feat: re-tokenize corpus with BPE`
 
-- [ ] Update `oniwa-pipeline` tokenization for BPE
-- [ ] Re-tokenize entire corpus with BPE
-- [ ] Insert `<eos>` delimiter tokens between documents
-- [ ] Record in provenance ledger
+- [x] Update `oniwa-pipeline` tokenization for BPE
+- [x] Re-tokenize entire corpus with BPE
+- [x] Insert `<eos>` delimiter tokens between documents
+- [x] Record in provenance ledger
 
 ---
 

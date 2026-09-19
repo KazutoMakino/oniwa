@@ -9,7 +9,7 @@
 use crate::cleaner::clean_aozora_text;
 use oniwa_lm::logger::{DataIngestionLog, ProvenanceEvent, ProvenanceLedger};
 use oniwa_lm::reproducibility::compute_checksum_bytes;
-use oniwa_lm::tokenizer::CharTokenizer;
+use oniwa_lm::tokenizer::{BpeTokenizer, CharTokenizer};
 use serde::Deserialize;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
@@ -528,6 +528,64 @@ impl AozoraPipeline {
             tokenizer.vocab_size()
         );
         println!("  - tokens.bin & vocab.json successfully updated!");
+
+        Ok((work_count, total_chars))
+    }
+
+    /// Consolidate all texts in corpus_dir and regenerate bpe_vocab.json and bpe_tokens.bin (inserting <eos> delimiters)
+    pub fn build_combined_corpus_bpe(
+        &self,
+        target_vocab_size: usize,
+    ) -> Result<(usize, usize), Box<dyn std::error::Error>> {
+        println!("\n============================================================");
+        println!(
+            " 📦 Consolidating all texts & generating BPE subword vocabulary (V={}) and token binary",
+            target_vocab_size
+        );
+        println!("============================================================");
+
+        let mut documents = Vec::new();
+        let mut work_count = 0;
+        let mut total_chars = 0;
+
+        let mut entries: Vec<_> = fs::read_dir(&self.corpus_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("txt"))
+            .collect();
+        entries.sort_by_key(|e| e.path());
+
+        for entry in entries {
+            let path = entry.path();
+            let text = fs::read_to_string(&path)?;
+            if !text.is_empty() {
+                total_chars += text.chars().count();
+                documents.push(text);
+                work_count += 1;
+            }
+        }
+
+        println!("  - Total consolidated works: {}", work_count);
+        println!("  - Total characters: {}", total_chars);
+
+        // BPE subword tokenization with <eos> delimiters between documents
+        let tokenizer = BpeTokenizer::ingest_documents(
+            &documents,
+            &self.data_dir,
+            &self.logs_dir,
+            target_vocab_size,
+            &format!(
+                "ONIWA Consolidated Corpus with <eos> delimiters ({} works)",
+                work_count
+            ),
+            "https://github.com/KazutoMakino/oniwa",
+            "Public Domain & Clean Open Licenses",
+        )?;
+
+        println!(
+            "  - Consolidated BPE vocab size: {} subwords",
+            tokenizer.vocab_size()
+        );
+        println!("  - bpe_tokens.bin & bpe_vocab.json successfully updated!");
 
         Ok((work_count, total_chars))
     }

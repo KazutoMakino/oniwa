@@ -53,6 +53,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut do_status = false;
     let mut do_force = false;
     let mut do_clean = false;
+    let mut do_bpe = false;
+    let mut bpe_vocab_size = 4096usize;
 
     let mut i = 1;
     while i < args.len() {
@@ -114,6 +116,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--build" | "--build-corpus" => {
                 do_build = true;
+            }
+            "--bpe" => {
+                do_bpe = true;
+            }
+            "--bpe-vocab" => {
+                if let Some(val) = args.get(i + 1) {
+                    bpe_vocab_size = val.parse().unwrap_or(4096);
+                    i += 1;
+                }
             }
             "--force" => {
                 do_force = true;
@@ -203,8 +214,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || do_arxiv
         || do_all
         || target_recipe.is_some()
+        || do_bpe
     {
         aozora_pipeline.build_combined_corpus()?;
+        if do_bpe {
+            aozora_pipeline.build_combined_corpus_bpe(bpe_vocab_size)?;
+        }
     }
 
     // 8. Display status
@@ -216,7 +231,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             && !do_arxiv
             && !do_all
             && target_recipe.is_none()
-            && !do_build)
+            && !do_build
+            && !do_bpe)
     {
         show_status(&data_dir, &logs_dir)?;
     }
@@ -256,6 +272,8 @@ fn print_help() {
         "  --limit <count>     Maximum number of works to fetch per author search (default: 5)"
     );
     println!("  --build             Merge all ingested texts into combined corpus and rebuild tokens.bin & vocab.json");
+    println!("  --bpe               Tokenize combined corpus with Pure Rust BPE subword tokenizer (inserts <eos>)");
+    println!("  --bpe-vocab <size>  Target BPE vocabulary size (default: 4096, range 4000-8000)");
     println!("  --force             Bypass cache and force re-download & re-parse");
     println!("  --clean             Reset ingested raw data, corpus, and ledger (backs up existing ledger)");
     println!(
