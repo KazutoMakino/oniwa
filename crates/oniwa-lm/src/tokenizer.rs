@@ -628,6 +628,72 @@ impl Tokenizer for BpeTokenizer {
     }
 }
 
+/// Unified Tokenizer Enum supporting both Character-level and BPE subwords
+#[derive(Debug, Clone)]
+pub enum AnyTokenizer {
+    Char(CharTokenizer),
+    Bpe(BpeTokenizer),
+}
+
+impl Tokenizer for AnyTokenizer {
+    fn vocab_size(&self) -> usize {
+        match self {
+            AnyTokenizer::Char(t) => t.vocab_size(),
+            AnyTokenizer::Bpe(t) => t.vocab_size(),
+        }
+    }
+
+    fn encode(&self, text: &str) -> Vec<u16> {
+        match self {
+            AnyTokenizer::Char(t) => t.encode(text),
+            AnyTokenizer::Bpe(t) => t.encode(text),
+        }
+    }
+
+    fn decode(&self, tokens: &[u16]) -> String {
+        match self {
+            AnyTokenizer::Char(t) => t.decode(tokens),
+            AnyTokenizer::Bpe(t) => t.decode(tokens),
+        }
+    }
+
+    fn token_to_id(&self, token: &str) -> Option<u16> {
+        match self {
+            AnyTokenizer::Char(t) => t.token_to_id(token),
+            AnyTokenizer::Bpe(t) => t.token_to_id(token),
+        }
+    }
+
+    fn id_to_token(&self, id: u16) -> Option<String> {
+        match self {
+            AnyTokenizer::Char(t) => t.id_to_token(id),
+            AnyTokenizer::Bpe(t) => t.id_to_token(id),
+        }
+    }
+}
+
+impl AnyTokenizer {
+    pub fn vocab_size(&self) -> usize {
+        <Self as Tokenizer>::vocab_size(self)
+    }
+
+    pub fn encode(&self, text: &str) -> Vec<u16> {
+        <Self as Tokenizer>::encode(self, text)
+    }
+
+    pub fn decode(&self, tokens: &[u16]) -> String {
+        <Self as Tokenizer>::decode(self, tokens)
+    }
+
+    pub fn token_to_id(&self, token: &str) -> Option<u16> {
+        <Self as Tokenizer>::token_to_id(self, token)
+    }
+
+    pub fn id_to_token(&self, id: u16) -> Option<String> {
+        <Self as Tokenizer>::id_to_token(self, id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

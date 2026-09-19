@@ -8,7 +8,7 @@ use oniwa_lm::model::{ModelConfig, ModelWeights};
 use oniwa_lm::power::PowerTracker;
 use oniwa_lm::reproducibility::{compute_checksum_bytes, compute_checksum_f32, DeterministicRng};
 use oniwa_lm::thermal::{ThermalConfig, ThermalController};
-use oniwa_lm::tokenizer::CharTokenizer;
+use oniwa_lm::tokenizer::{AnyTokenizer, BpeTokenizer, CharTokenizer, Tokenizer};
 use std::fs;
 use std::time::Instant;
 
@@ -54,6 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut label_smoothing = 0.05f32;
     let mut z_loss_weight = 1e-4f32;
     let mut weight_tying_arg: Option<bool> = None;
+    let mut bpe_mode = false;
+    let mut bpe_vocab_size = 4096usize;
 
     let mut i = 1;
     while i < args.len() {
@@ -135,6 +137,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--no-weight-tying" => {
                 weight_tying_arg = Some(false);
             }
+            "--bpe" => {
+                bpe_mode = true;
+            }
+            "--bpe-vocab" => {
+                if let Some(val) = args.get(i + 1) {
+                    bpe_vocab_size = val.parse().unwrap_or(4096).clamp(4, 32000);
+                    bpe_mode = true;
+                    i += 1;
+                }
+            }
             _ => {}
         }
         i += 1;
@@ -175,23 +187,59 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     };
 
-    let tokenizer = CharTokenizer::ingest_file(
-        &dataset_path,
-        &data_dir,
-        &logs_dir,
-        dataset_name,
-        dataset_url,
-        "Public Domain & Clean Open Source",
-    )?;
+    let bpe_tokens_path = data_dir.join("bpe_tokens.bin");
+    let bpe_vocab_path = data_dir.join("bpe_vocab.json");
+    let use_bpe = bpe_mode || (bpe_tokens_path.exists() && bpe_vocab_path.exists());
 
-    let tokens = CharTokenizer::load_tokens_bin(data_dir.join("tokens.bin"))?;
+    let (tokenizer, tokens, token_bin_path) = if use_bpe {
+        let bpe_tok = if bpe_vocab_path.exists() && bpe_tokens_path.exists() {
+            println!("  - Loading existing BPE subword vocabulary (bpe_vocab.json)...");
+            BpeTokenizer::load_vocab(&bpe_vocab_path)?
+        } else {
+            println!(
+                "  - Training and ingesting BPE subwords (target vocab: {})...",
+                bpe_vocab_size
+            );
+            BpeTokenizer::ingest_file(
+                &dataset_path,
+                &data_dir,
+                &logs_dir,
+                bpe_vocab_size,
+                dataset_name,
+                dataset_url,
+                "Public Domain & Clean Open Source",
+            )?
+        };
+        let bpe_tokens = CharTokenizer::load_tokens_bin(&bpe_tokens_path)?;
+        (AnyTokenizer::Bpe(bpe_tok), bpe_tokens, bpe_tokens_path)
+    } else {
+        let char_tok = CharTokenizer::ingest_file(
+            &dataset_path,
+            &data_dir,
+            &logs_dir,
+            dataset_name,
+            dataset_url,
+            "Public Domain & Clean Open Source",
+        )?;
+        let char_tokens = CharTokenizer::load_tokens_bin(data_dir.join("tokens.bin"))?;
+        (
+            AnyTokenizer::Char(char_tok),
+            char_tokens,
+            data_dir.join("tokens.bin"),
+        )
+    };
+
     let split_idx = (tokens.len() as f32 * 0.9) as usize;
     let (train_tokens, val_tokens) = tokens.split_at(split_idx);
     println!("  - Training dataset: {}", dataset_name);
     println!(
-        "  - Vocabulary size (V): {} characters",
-        tokenizer.vocab_size()
+        "  - Tokenizer: {}",
+        match &tokenizer {
+            AnyTokenizer::Bpe(_) => "Pure Rust BPE Subword",
+            AnyTokenizer::Char(_) => "Character-level (UTF-8)",
+        }
     );
+    println!("  - Vocabulary size (V): {} tokens", tokenizer.vocab_size());
     println!("  - Total tokens: {} tokens", tokens.len());
     println!(
         "  - Data split: Train {} tokens (90%) / Val {} tokens (10%)",
@@ -202,7 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---------------------------------------------------------
     // 2. Model initialization & reproducibility configuration
     // ---------------------------------------------------------
-    println!("\n[2/4] ⚙️ Initializing model & deterministic seed (oniwa-v2)...");
+    println!("\n[2/4] ⚙️ Initializing model & deterministic seed (oniwa-v3)...");
     let mut rng = DeterministicRng::new(seed);
 
     let checkpoint_dir = base_dir.join("checkpoints").join("latest");
@@ -225,7 +273,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ffn_dim: 256,
                 label_smoothing,
                 z_loss_weight,
-                ..Default::default()
+                weight_tying: true,
             },
         }
     } else {
@@ -239,7 +287,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ffn_dim: 256,
             label_smoothing,
             z_loss_weight,
-            ..Default::default()
+            weight_tying: true,
         }
     };
 
@@ -372,7 +420,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             label_smoothing: config.label_smoothing,
             z_loss_weight: config.z_loss_weight,
         },
-        dataset_sha256: compute_checksum_bytes(&fs::read(data_dir.join("tokens.bin"))?),
+        dataset_sha256: compute_checksum_bytes(&fs::read(&token_bin_path)?),
         initial_weights_sha256: init_checksum.clone(),
         platform_arch: std::env::consts::ARCH.into(),
         os_name: std::env::consts::OS.into(),
@@ -894,9 +942,9 @@ fn compute_cosine_lr(
 }
 
 /// Autoregressively sample specified number of tokens from prompt
-fn generate_sample(
+fn generate_sample<T: Tokenizer>(
     model: &ModelWeights,
-    tokenizer: &CharTokenizer,
+    tokenizer: &T,
     prompt: &str,
     max_tokens: usize,
     rng: &mut DeterministicRng,

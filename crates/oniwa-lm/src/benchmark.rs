@@ -7,7 +7,7 @@
 
 use crate::model::ModelWeights;
 use crate::reproducibility::DeterministicRng;
-use crate::tokenizer::CharTokenizer;
+use crate::tokenizer::Tokenizer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -245,9 +245,9 @@ pub fn all_cloze_questions() -> Vec<ClozeQuestion> {
 }
 
 /// Evaluate cloze test suite
-pub fn evaluate_cloze_suite(
+pub fn evaluate_cloze_suite<T: Tokenizer>(
     model: &ModelWeights,
-    tokenizer: &CharTokenizer,
+    tokenizer: &T,
     questions: &[ClozeQuestion],
 ) -> (f32, f32, Vec<ClozeDetail>) {
     let mut top1_hits = 0;
@@ -256,7 +256,8 @@ pub fn evaluate_cloze_suite(
 
     for q in questions {
         let tokens = tokenizer.encode(&q.prompt);
-        let target_id_opt = tokenizer.char_to_id.get(&q.target).copied();
+        let target_str = q.target.to_string();
+        let target_id_opt = tokenizer.token_to_id(&target_str);
 
         if tokens.is_empty() || target_id_opt.is_none() {
             continue;
@@ -277,7 +278,10 @@ pub fn evaluate_cloze_suite(
                 argmax_id = i;
             }
         }
-        let predicted_char = tokenizer.id_to_char.get(argmax_id).copied().unwrap_or('?');
+        let predicted_char = tokenizer
+            .id_to_token(argmax_id as u16)
+            .and_then(|tok| tok.chars().next())
+            .unwrap_or('?');
 
         // Calculate target token rank and probability
         let target_logit = logits.get(target_id).copied().unwrap_or(f32::NEG_INFINITY);
@@ -533,9 +537,9 @@ pub fn evaluate_syntactic_health(texts: &[String]) -> (f32, f32, f32, f32, f32) 
 }
 
 /// Comprehensive multi-axis benchmark execution (literature + code)
-pub fn run_benchmark(
+pub fn run_benchmark<T: Tokenizer>(
     model: &ModelWeights,
-    tokenizer: &CharTokenizer,
+    tokenizer: &T,
     val_tokens: &[u16],
     generated_samples: &[String],
     batch_size: usize,
@@ -625,6 +629,7 @@ pub fn evaluate_validation_metrics(
 mod tests {
     use super::*;
     use crate::model::ModelConfig;
+    use crate::tokenizer::CharTokenizer;
 
     #[test]
     fn test_bracket_scoring() {

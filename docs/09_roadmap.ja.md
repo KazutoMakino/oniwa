@@ -277,10 +277,10 @@ flowchart TB
 
 #### Issue: `feat: initialize and train oniwa-v3 with BPE and weight tying`
 
-- [ ] v3用ModelConfig設定
-- [ ] 既存v2チェックポイントの退避
-- [ ] v3初回学習実行・検証
-- [ ] growth_journal.mdへの記録
+- [x] v3用ModelConfig設定
+- [x] 既存v2チェックポイントの退避
+- [x] v3初回学習実行・検証
+- [x] growth_journal.mdへの記録
 
 ---
 
