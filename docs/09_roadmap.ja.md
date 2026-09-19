@@ -206,7 +206,7 @@ flowchart TB
 
 #### Issue: `docs: comprehensive benchmark report for quaternion decision engine`
 
-- [ ] 統合ベンチマーク実行:
+- [x] 統合ベンチマーク実行:
 
 | 構成 | パラメータ | 推論レイテンシ | RSS | J/推論 | Loss | Accuracy |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
