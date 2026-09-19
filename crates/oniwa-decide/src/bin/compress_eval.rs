@@ -74,6 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1. Initialize System One (oniwa-decide)
     let possible_ckpts = [
+        workspace_root.join("crates/oniwa-decide/checkpoints/full_quaternion/best"),
         workspace_root.join("crates/oniwa-decide/checkpoints/quaternion_head/best"),
         workspace_root.join("crates/oniwa-decide/checkpoints/best"),
         workspace_root.join("crates/oniwa-decide/checkpoints/standard_baseline/best"),

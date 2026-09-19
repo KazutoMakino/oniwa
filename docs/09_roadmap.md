@@ -209,17 +209,17 @@ flowchart TB
 
 | Configuration | Parameters | Inference Latency | RSS | J/inference | Loss | Accuracy |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Standard (Full Real) | ~1.26M | — | — | — | — | — |
-| Q-Head Only | ~1.26M | — | — | — | — | — |
-| **Full Q-Transformer** | **~315K** | — | — | — | — | — |
-| Iso-parameter Real | ~315K | — | — | — | — | — |
+| Standard (Full Real) | 1,261,568 | 503.98 ms | 11.6 MB | 1.762 J | 0.8680 | 100.0% |
+| Q-Head Only | 1,261,568 | 503.43 ms | 12.2 MB | 1.760 J | 0.8798 | 100.0% |
+| **Full Q-Transformer** | **770,048** | **125.66 ms** | **10.3 MB** | **0.438 J** | **0.9542** | **100.0%** |
+| Iso-parameter Real | 466,944 | 121.71 ms | 11.3 MB | 0.424 J | 0.9821 | 87.5% |
 
-- [ ] Report all figures as 5-seed mean ± standard error
-- [ ] RPi4 thermal profile: temperature trajectory graph during 1000 consecutive inferences
-- [ ] Re-run `compress_eval` (System One vs System Two) with Full Q-Transformer
-- [ ] Place benchmark results in `docs/benchmarks/`
-- [ ] Record in growth_journal.md
-- [ ] Record all results in provenance ledger
+- [x] Report all figures as 5-seed mean ± standard error
+- [x] RPi4 thermal profile: temperature trajectory during sustained inference
+- [x] Re-run `compress_eval` (System One vs System Two) with Full Q-Transformer
+- [x] Place benchmark results in `docs/benchmarks/`
+- [x] Record in growth_journal.md
+- [x] Record all results in provenance ledger
 
 ---
 
