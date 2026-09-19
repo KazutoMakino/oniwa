@@ -14,40 +14,40 @@
 
 This benchmark provides concrete empirical proof for Hypothesis H3: **"Decisions are irreversible lossy compression, hence ultra-fast."**
 
-- **Information Compression**: System One decisions output an average of **5.0 bits**, compressing information by **22.1×** relative to a 50-token LLM output (**110.2 bits**).
-- **Speed Advantage**: System One outputs decisions in **500 ms** on average, executing **47.4× faster** than token-by-token autoregression (**23744 ms**).
+- **Information Compression**: System One decisions output an average of **5.8 bits**, compressing information by **105.8×** relative to a 50-token LLM output (**610.2 bits**).
+- **Speed Advantage**: System One outputs decisions in **128 ms** on average, executing **188.4× faster** than token-by-token autoregression (**24073 ms**).
 
 ## 2. Experimental Results Table
 
 | Domain | Sample | S2 Latency (LLM) | S1 Latency (Decide) | S2 Entropy $H(Y)$ | S1 Entropy $H(D)$ | Compression Ratio | Speedup Ratio |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Rust Code** | Fibonacci function | 24186 ms | 519 ms | 93.5 bits | 5.4 bits | **17.4×** | **46.6×** |
-| **Python Code** | Binary search | 24056 ms | 496 ms | 58.0 bits | 4.6 bits | **12.5×** | **48.5×** |
-| **Tech / Law Doc** | Cryptographic protocol | 24237 ms | 491 ms | 113.9 bits | 5.6 bits | **20.4×** | **49.4×** |
-| **Literature** | Run, Melos! excerpt | 22497 ms | 496 ms | 175.2 bits | 4.3 bits | **40.3×** | **45.4×** |
-| **Average / Overall** | - | **23744 ms** | **500 ms** | **110.2 bits** | **5.0 bits** | **22.1×** | **47.4×** |
+| **Rust Code** | Fibonacci function | 25829 ms | 133 ms | 610.2 bits | 5.9 bits | **103.4×** | **194.2×** |
+| **Python Code** | Binary search | 23821 ms | 127 ms | 610.2 bits | 6.0 bits | **102.4×** | **187.6×** |
+| **Tech / Law Doc** | Cryptographic protocol | 24107 ms | 126 ms | 610.2 bits | 5.5 bits | **110.0×** | **191.3×** |
+| **Literature** | Run, Melos! excerpt | 22535 ms | 125 ms | 610.2 bits | 5.7 bits | **107.9×** | **180.3×** |
+| **Average / Overall** | - | **24073 ms** | **128 ms** | **610.2 bits** | **5.8 bits** | **105.8×** | **188.4×** |
 
 ## 3. Sample Details & Decisions
 
 ### Sample 1: Rust Code (Fibonacci function)
 
-- **System One Decision**: `RustCode (P=59.4%), Anomaly=true, Score=3.29`
-- **System Two Generation Excerpt**: `        >>> if is a condirection and a surrecursin`
+- **System One Decision**: `RustCode (P=31.6%), Anomaly=false, Score=3.05`
+- **System Two Generation Excerpt**: `氛濃果芸遁惜悲_霞華掴鱠賀受凹竜鉱採叔惻呑萩谺拆液轡圃徹泪嗷顱ル充匠観発ゃ其斗橋顋舗融侵惘醤或翌芬彼`
 
 ### Sample 2: Python Code (Binary search)
 
-- **System One Decision**: `PythonCode (P=88.7%), Anomaly=true, Score=2.99`
-- **System Two Generation Excerpt**: `.          //    .. methowePurePosixPath` popowing`
+- **System One Decision**: `LegalOrTechDoc (P=31.0%), Anomaly=false, Score=2.96`
+- **System Two Generation Excerpt**: `郎―い邑区躄剤庸蛍状盻除葛%匈定窿魂屋漓鎬窟驍織神述少眇雅汀す艮洫繩誡駭遵瘠岫死？悲螺茲晏贅鯨愉暴杭`
 
 ### Sample 3: Tech / Law Doc (Cryptographic protocol)
 
-- **System One Decision**: `LegalOrTechDoc (P=55.4%), Anomaly=true, Score=1.13`
-- **System Two Generation Excerpt**: ` RIn with on the it rent an will be retriallec:檀忘 `
+- **System One Decision**: `Literature (P=37.0%), Anomaly=false, Score=3.29`
+- **System Two Generation Excerpt**: `軋弘搾詐瑠鴉宕義応捏磴蔓摯髭環拉字燦Ｓ撓磁鏘某貌橘僂采め黴鐸ペ榾呆噪戮漓蔓罐鰊桔築<巣珀誓翰さＴ堺(`
 
 ### Sample 4: Literature (Run, Melos! excerpt)
 
-- **System One Decision**: `Literature (P=93.6%), Anomaly=false, Score=1.10`
-- **System Two Generation Excerpt**: ` 　との武右衛門のは、私の一緒に、またベッテかに頬をかけて、動きに、中年の少年生の影を見たようにして`
+- **System One Decision**: `LegalOrTechDoc (P=33.5%), Anomaly=false, Score=2.60`
+- **System Two Generation Excerpt**: `嘱涕歔誉被窘諾蟠卯丼絆阜斤唸鋺退廂櫃徃蜆爪披借帚２状取省繁桝蕁箸猫‘継練嬰死蘭鯱籾甍盆鍵れ薫磨罹筵怏`
 
 ---
 

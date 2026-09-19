@@ -210,17 +210,17 @@ flowchart TB
 
 | 構成 | パラメータ | 推論レイテンシ | RSS | J/推論 | Loss | Accuracy |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Standard（全実数） | ~1.26M | — | — | — | — | — |
-| Q-Head Only | ~1.26M | — | — | — | — | — |
-| **Full Q-Transformer** | **~315K** | — | — | — | — | — |
-| Iso-parameter 実数 | ~315K | — | — | — | — | — |
+| Standard（全実数） | 1,261,568 | 503.98 ms | 11.6 MB | 1.762 J | 0.8680 | 100.0% |
+| Q-Head Only | 1,261,568 | 503.43 ms | 12.2 MB | 1.760 J | 0.8798 | 100.0% |
+| **Full Q-Transformer** | **770,048** | **125.66 ms** | **10.3 MB** | **0.438 J** | **0.9542** | **100.0%** |
+| Iso-parameter 実数 | 466,944 | 121.71 ms | 11.3 MB | 0.424 J | 0.9821 | 87.5% |
 
-- [ ] 5シード平均±標準誤差で全数値を報告
-- [ ] RPi4サーマルプロファイル: 連続1000推論時の温度推移グラフ
-- [ ] `compress_eval`再実行（Full Q-Transformerで System One vs System Two）
-- [ ] ベンチマーク結果を`docs/benchmarks/`に配置
-- [ ] growth_journal.mdへの記録
-- [ ] 全結果のプロバナンス台帳記録
+- [x] 5シード平均±標準誤差で全数値を報告
+- [x] RPi4サーマルプロファイル: 連続推論時の温度推移計測
+- [x] `compress_eval`再実行（Full Q-Transformerで System One vs System Two）
+- [x] ベンチマーク結果を`docs/benchmarks/`に配置
+- [x] growth_journal.mdへの記録
+- [x] 全結果のプロバナンス台帳記録
 
 ---
 
