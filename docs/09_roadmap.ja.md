@@ -148,15 +148,15 @@ flowchart TB
 
 #### Issue: `feat: implement Quaternion SwiGLU MLP with Hamilton product projections`
 
-- [ ] `src/layers/quaternion_mlp.rs`を新規作成
-- [ ] Gate/Up投影: `QuaternionLinear`（$\mathbb{H}^{D/4} \to \mathbb{H}^{D_\text{ffn}/4}$）
+- [x] `src/layers/quaternion_mlp.rs`を新規作成
+- [x] Gate/Up投影: `QuaternionLinear`（$\mathbb{H}^{D/4} \to \mathbb{H}^{D_\text{ffn}/4}$）
   - $G = W_\text{gate} \otimes x$, $U = W_\text{up} \otimes x$
-- [ ] SwiGLU活性化: $H = \text{SiLU}(G) \odot U$
+- [x] SwiGLU活性化: $H = \text{SiLU}(G) \odot U$
   - 活性化関数はクォータニオンの各4成分に独立に適用
-- [ ] Down投影: `QuaternionLinear`（$\mathbb{H}^{D_\text{ffn}/4} \to \mathbb{H}^{D/4}$）
-- [ ] GHRカルキュラスによる解析的バックワードパス
-- [ ] 有限差分勾配検証テスト
-- [ ] `cargo test --workspace` / `cargo clippy` 全パス確認
+- [x] Down投影: `QuaternionLinear`（$\mathbb{H}^{D_\text{ffn}/4} \to \mathbb{H}^{D/4}$）
+- [x] GHRカルキュラスによる解析的バックワードパス
+- [x] 有限差分勾配検証テスト
+- [x] `cargo test --workspace` / `cargo clippy` 全パス確認
 
 ---
 
