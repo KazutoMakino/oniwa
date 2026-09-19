@@ -31,6 +31,12 @@ pub struct ModelConfig {
     pub label_smoothing: f32,
     #[serde(default = "default_z_loss_weight")]
     pub z_loss_weight: f32,
+    #[serde(default = "default_weight_tying")]
+    pub weight_tying: bool,
+}
+
+pub fn default_weight_tying() -> bool {
+    false
 }
 
 pub fn default_seq_len() -> usize {
@@ -78,6 +84,7 @@ impl Default for ModelConfig {
             ffn_dim: default_ffn_dim(),
             label_smoothing: default_label_smoothing(),
             z_loss_weight: default_z_loss_weight(),
+            weight_tying: default_weight_tying(),
         }
     }
 }
@@ -102,6 +109,7 @@ impl ModelConfig {
             .unwrap_or(if dim == 64 { 128 } else { 256 }) as usize;
         let label_smoothing = meta["label_smoothing"].as_f64().unwrap_or(0.05) as f32;
         let z_loss_weight = meta["z_loss_weight"].as_f64().unwrap_or(1e-4) as f32;
+        let weight_tying = meta["weight_tying"].as_bool().unwrap_or(false);
 
         Ok(Self {
             vocab_size,
@@ -113,6 +121,7 @@ impl ModelConfig {
             ffn_dim,
             label_smoothing,
             z_loss_weight,
+            weight_tying,
         })
     }
 }
@@ -175,7 +184,14 @@ impl ModelLayout {
 
         let rms_final = offset;
         offset += c;
-        let lm_head = offset;
+        let lm_head = if cfg.weight_tying {
+            wte
+        } else {
+            let h = offset;
+            offset += c * v;
+            let _ = offset;
+            h
+        };
 
         Self {
             wte,
@@ -245,8 +261,10 @@ impl ModelWeights {
         }
         // 3. Final RMSNorm: [C]
         total += c;
-        // 4. LM Head (Logits Proj): [C, V]
-        total += c * v;
+        // 4. LM Head (Logits Proj): [C, V] (omitted if weight_tying is true, sharing wte)
+        if !cfg.weight_tying {
+            total += c * v;
+        }
 
         total
     }
@@ -307,6 +325,7 @@ impl ModelWeights {
             "seq_len": self.config.seq_len,
             "label_smoothing": self.config.label_smoothing,
             "z_loss_weight": self.config.z_loss_weight,
+            "weight_tying": self.config.weight_tying,
             "params_checksum": crate::reproducibility::compute_checksum_f32(&self.params),
             "git_commit_hash": crate::logger::get_git_commit_hash(),
             "git_dirty": crate::logger::get_git_dirty(),
@@ -352,6 +371,9 @@ impl ModelWeights {
         if let Some(zw) = meta["z_loss_weight"].as_f64() {
             self.config.z_loss_weight = zw as f32;
         }
+        if let Some(wt) = meta["weight_tying"].as_bool() {
+            self.config.weight_tying = wt;
+        }
 
         // 2. Load raw binary
         let mut f = std::io::BufReader::new(std::fs::File::open(dir_p.join("weights.bin"))?);
@@ -378,6 +400,7 @@ impl ModelWeights {
 
     /// Full Transformer forward, backward, gradient accumulation, and loss calculation
     pub fn forward_backward(&mut self, x: &[u16], y: &[u16], b: usize, t: usize) -> (f32, f32) {
+        self.zero_grad();
         let n = b * t;
         let c = self.config.dim;
         let v = self.config.vocab_size;
@@ -535,6 +558,9 @@ impl ModelWeights {
         );
 
         // LM Head: final_norm [N, C] * lm_head [C, V] -> logits [N, V]
+        // If weight_tying is enabled, lm_head is the transpose view of wte [V, C],
+        // where lm_head[k, j] == wte[j, k] = wte[j * c + k].
+        let tied = self.config.weight_tying;
         let lm_head_w = &self.params[layout.lm_head..layout.lm_head + c * v];
         let mut total_loss = 0.0f32;
         let mut dlogits = vec![0.0f32; n * v];
@@ -554,8 +580,15 @@ impl ModelWeights {
             let mut sum_raw_logits = 0.0f32;
             for j in 0..v {
                 let mut dot = 0.0f32;
-                for k in 0..c {
-                    dot += norm_row[k] * lm_head_w[k * v + j];
+                if tied {
+                    let wte_row = &lm_head_w[j * c..(j + 1) * c];
+                    for k in 0..c {
+                        dot += norm_row[k] * wte_row[k];
+                    }
+                } else {
+                    for k in 0..c {
+                        dot += norm_row[k] * lm_head_w[k * v + j];
+                    }
                 }
                 logits_row[j] = dot;
                 sum_raw_logits += dot;
@@ -613,23 +646,46 @@ impl ModelWeights {
         // --- 2. Backward Pass ---
 
         // (1) LM Head Backward:
-        // dlm_head += final_norm^T * dlogits
-        // d_final_norm = dlogits * lm_head^T
+        // When untied:
+        //   dlm_head += final_norm^T * dlogits  (shape [c, v])
+        //   d_final_norm = dlogits * lm_head^T
+        // When tied (lm_head is wte transposed, shape [v, c]):
+        //   dwte_lm += dlogits^T * final_norm (shape [v, c])
+        //   d_final_norm = dlogits * wte
         let mut d_final_norm = vec![0.0f32; n * c];
-        let dlm_head = &mut self.grads[layout.lm_head..layout.lm_head + c * v];
-        for i in 0..n {
-            let dlogits_row = &dlogits[i * v..(i + 1) * v];
-            let norm_row = &final_norm[i * c..(i + 1) * c];
-            let df_row = &mut d_final_norm[i * c..(i + 1) * c];
+        if tied {
+            let dwte_lm = &mut self.grads[layout.wte..layout.wte + v * c];
+            for i in 0..n {
+                let dlogits_row = &dlogits[i * v..(i + 1) * v];
+                let norm_row = &final_norm[i * c..(i + 1) * c];
+                let df_row = &mut d_final_norm[i * c..(i + 1) * c];
 
-            for k in 0..c {
-                let mut dot = 0.0f32;
                 for j in 0..v {
                     let dlogit = dlogits_row[j];
-                    dot += dlogit * lm_head_w[k * v + j];
-                    dlm_head[k * v + j] += norm_row[k] * dlogit;
+                    let wte_row = &lm_head_w[j * c..(j + 1) * c];
+                    let dwte_row = &mut dwte_lm[j * c..(j + 1) * c];
+                    for k in 0..c {
+                        df_row[k] += dlogit * wte_row[k];
+                        dwte_row[k] += norm_row[k] * dlogit;
+                    }
                 }
-                df_row[k] = dot;
+            }
+        } else {
+            let dlm_head = &mut self.grads[layout.lm_head..layout.lm_head + c * v];
+            for i in 0..n {
+                let dlogits_row = &dlogits[i * v..(i + 1) * v];
+                let norm_row = &final_norm[i * c..(i + 1) * c];
+                let df_row = &mut d_final_norm[i * c..(i + 1) * c];
+
+                for k in 0..c {
+                    let mut dot = 0.0f32;
+                    for j in 0..v {
+                        let dlogit = dlogits_row[j];
+                        dot += dlogit * lm_head_w[k * v + j];
+                        dlm_head[k * v + j] += norm_row[k] * dlogit;
+                    }
+                    df_row[k] = dot;
+                }
             }
         }
 
@@ -878,6 +934,7 @@ impl ModelWeights {
         );
 
         // LM Head & CrossEntropy & Top-k
+        let tied = self.config.weight_tying;
         let lm_head_w = &self.params[layout.lm_head..layout.lm_head + c * v];
         let mut total_loss = 0.0f32;
         let mut top_k_hits = 0usize;
@@ -890,8 +947,15 @@ impl ModelWeights {
             let mut max_logit = f32::NEG_INFINITY;
             for j in 0..v {
                 let mut dot = 0.0f32;
-                for k_idx in 0..c {
-                    dot += norm_row[k_idx] * lm_head_w[k_idx * v + j];
+                if tied {
+                    let wte_row = &lm_head_w[j * c..(j + 1) * c];
+                    for k_idx in 0..c {
+                        dot += norm_row[k_idx] * wte_row[k_idx];
+                    }
+                } else {
+                    for k_idx in 0..c {
+                        dot += norm_row[k_idx] * lm_head_w[k_idx * v + j];
+                    }
                 }
                 logits_row[j] = dot;
                 if dot > max_logit {
@@ -1041,13 +1105,21 @@ impl ModelWeights {
         );
 
         // Logits for the final token (t - 1)
+        let tied = self.config.weight_tying;
         let last_norm_row = &final_norm[(t - 1) * c..t * c];
         let lm_head_w = &self.params[layout.lm_head..layout.lm_head + c * v];
         let mut logits = vec![0.0f32; v];
         for j in 0..v {
             let mut dot = 0.0f32;
-            for k in 0..c {
-                dot += last_norm_row[k] * lm_head_w[k * v + j];
+            if tied {
+                let wte_row = &lm_head_w[j * c..(j + 1) * c];
+                for k in 0..c {
+                    dot += last_norm_row[k] * wte_row[k];
+                }
+            } else {
+                for k in 0..c {
+                    dot += last_norm_row[k] * lm_head_w[k * v + j];
+                }
             }
             logits[j] = dot;
         }
@@ -1073,6 +1145,7 @@ mod tests {
             ffn_dim: 32,
             label_smoothing: 0.0,
             z_loss_weight: 0.0,
+            ..Default::default()
         };
         let mut model = ModelWeights::new(config, &mut rng);
 
@@ -1110,6 +1183,7 @@ mod tests {
             ffn_dim: 32,
             label_smoothing: 0.05,
             z_loss_weight: 1e-4,
+            ..Default::default()
         };
         let mut model = ModelWeights::new(config, &mut rng);
 
@@ -1148,5 +1222,122 @@ mod tests {
             numerical_grad,
             diff
         );
+    }
+
+    #[test]
+    fn test_weight_tying_param_count() {
+        let config_untied = ModelConfig {
+            vocab_size: 4721,
+            seq_len: 128,
+            dim: 128,
+            num_layers: 4,
+            num_heads: 4,
+            head_dim: 32,
+            ffn_dim: 256,
+            label_smoothing: 0.05,
+            z_loss_weight: 1e-4,
+            weight_tying: false,
+        };
+        let mut config_tied = config_untied.clone();
+        config_tied.weight_tying = true;
+
+        let params_untied = ModelWeights::calculate_num_params(&config_untied);
+        let params_tied = ModelWeights::calculate_num_params(&config_tied);
+
+        let v = config_untied.vocab_size;
+        let c = config_untied.dim;
+        assert_eq!(params_untied - params_tied, v * c);
+        assert_eq!(params_untied, 1_865_088);
+        assert_eq!(params_tied, 1_260_800); // 604,288 fewer parameters (~32.4% reduction)
+    }
+
+    #[test]
+    fn test_weight_tying_eval_matches_fb() {
+        let mut rng = DeterministicRng::new(42);
+        let config = ModelConfig {
+            vocab_size: 25,
+            seq_len: 4,
+            dim: 16,
+            num_layers: 2,
+            num_heads: 2,
+            head_dim: 8,
+            ffn_dim: 32,
+            label_smoothing: 0.0,
+            z_loss_weight: 0.0,
+            weight_tying: true,
+        };
+        let mut model = ModelWeights::new(config, &mut rng);
+
+        let b = 2;
+        let t = 4;
+        let x = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let y = vec![2, 3, 4, 5, 6, 7, 8, 9];
+
+        let eval_loss = model.evaluate_loss(&x, &y, b, t);
+        let (fb_loss, _) = model.forward_backward(&x, &y, b, t);
+
+        assert!(
+            (eval_loss - fb_loss).abs() < 1e-5,
+            "eval_loss: {}, fb_loss: {}",
+            eval_loss,
+            fb_loss
+        );
+    }
+
+    #[test]
+    fn test_weight_tying_gradient_check() {
+        let mut rng = DeterministicRng::new(123);
+        let config = ModelConfig {
+            vocab_size: 10,
+            seq_len: 4,
+            dim: 8,
+            num_layers: 1,
+            num_heads: 1,
+            head_dim: 8,
+            ffn_dim: 16,
+            label_smoothing: 0.05,
+            z_loss_weight: 1e-4,
+            weight_tying: true,
+        };
+        let mut model = ModelWeights::new(config, &mut rng);
+
+        let b = 1;
+        let t = 4;
+        let x = vec![1, 2, 3, 4];
+        let y = vec![2, 3, 4, 5];
+
+        let (loss, grad_norm) = model.forward_backward(&x, &y, b, t);
+        assert!(!loss.is_nan());
+        assert!(loss > 0.0);
+        assert!(!grad_norm.is_nan());
+        assert!(grad_norm > 0.0);
+
+        // Check gradient on tied embedding parameter (which gets gradients from BOTH embedding lookup AND LM head)
+        let layout = ModelLayout::new(&model.config);
+        for param_idx in [layout.wte + 3, layout.wte + 15, layout.wte + 25] {
+            let orig_val = model.params[param_idx];
+            let h = 1e-3f32;
+
+            model.params[param_idx] = orig_val + h;
+            let (loss_plus, _) = model.forward_backward(&x, &y, b, t);
+
+            model.params[param_idx] = orig_val - h;
+            let (loss_minus, _) = model.forward_backward(&x, &y, b, t);
+
+            model.params[param_idx] = orig_val;
+            model.forward_backward(&x, &y, b, t);
+            let analytical_grad = model.grads[param_idx];
+            let numerical_grad = (loss_plus - loss_minus) / (2.0 * h);
+
+            let diff = (analytical_grad - numerical_grad).abs();
+            assert!(
+                diff < 5e-3,
+                "param_idx {}: analytical: {}, numerical: {}, diff: {}",
+                param_idx,
+                analytical_grad,
+                numerical_grad,
+                diff
+            );
+        }
     }
 }

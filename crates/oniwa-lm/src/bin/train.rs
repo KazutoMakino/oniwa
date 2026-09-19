@@ -53,6 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut run_name_arg: Option<String> = None;
     let mut label_smoothing = 0.05f32;
     let mut z_loss_weight = 1e-4f32;
+    let mut weight_tying_arg: Option<bool> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -128,6 +129,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     i += 1;
                 }
             }
+            "--weight-tying" => {
+                weight_tying_arg = Some(true);
+            }
+            "--no-weight-tying" => {
+                weight_tying_arg = Some(false);
+            }
             _ => {}
         }
         i += 1;
@@ -202,7 +209,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let best_checkpoint_dir = base_dir.join("checkpoints").join("best");
 
     // Restore config from meta.json if checkpoint exists, otherwise use v2 default
-    let config = if !reset_mode && checkpoint_dir.join("meta.json").exists() {
+    let mut config = if !reset_mode && checkpoint_dir.join("meta.json").exists() {
         match ModelConfig::from_meta_json(checkpoint_dir.join("meta.json")) {
             Ok(mut c) => {
                 c.vocab_size = tokenizer.vocab_size();
@@ -218,6 +225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ffn_dim: 256,
                 label_smoothing,
                 z_loss_weight,
+                ..Default::default()
             },
         }
     } else {
@@ -231,8 +239,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ffn_dim: 256,
             label_smoothing,
             z_loss_weight,
+            ..Default::default()
         }
     };
+
+    if let Some(wt) = weight_tying_arg {
+        config.weight_tying = wt;
+    }
 
     let mut model = ModelWeights::new(config.clone(), &mut rng);
     let total_params = model.params.len();
@@ -241,9 +254,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.seq_len, config.dim, config.num_layers, config.num_heads
     );
     println!(
-        "  - Total parameters: {} (~{:.2} M params)",
+        "  - Total parameters: {} (~{:.2} M params, Weight Tying: {})",
         total_params,
-        total_params as f32 / 1_000_000.0
+        total_params as f32 / 1_000_000.0,
+        config.weight_tying
     );
     println!(
         "  - Regularization / Loss: Label Smoothing ({:.2}) + Z-loss ({:e})",
