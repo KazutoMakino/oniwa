@@ -11,6 +11,7 @@ pub mod dataset;
 pub mod layers;
 pub mod loss;
 pub mod model;
+pub mod profiler;
 pub mod quaternion;
 pub mod sensor;
 
@@ -19,6 +20,7 @@ pub use layers::quaternion_linear::QuaternionLinear;
 pub use loss::{LossCalculator, LossConfig};
 pub use model::{DecisionConfig, DecisionModel, RawDecision};
 use oniwa_lm::tokenizer::CharTokenizer;
+pub use profiler::{HardwareProfileRecord, LatencyStats, MemoryProfile};
 pub use quaternion::Quaternion;
 pub use sensor::{SemanticSensor, StateEmbedding};
 use serde::{Deserialize, Serialize};

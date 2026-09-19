@@ -28,6 +28,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut reset_mode = false;
     let mut add_steps_arg: Option<usize> = None;
     let mut quaternion_head_mode = false;
+    let mut config_mode = "standard".to_string(); // "standard", "quaternion_head", "iso_parameter"
+    let mut custom_checkpoint_dir: Option<std::path::PathBuf> = None;
+    let mut metrics_path: Option<std::path::PathBuf> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -49,6 +52,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--quaternion-head" => {
                 quaternion_head_mode = true;
+                config_mode = "quaternion_head".to_string();
+            }
+            "--config" => {
+                if let Some(v) = args.get(i + 1) {
+                    config_mode = v.clone();
+                    if v == "quaternion_head" {
+                        quaternion_head_mode = true;
+                    }
+                    i += 1;
+                }
+            }
+            "--checkpoint-dir" => {
+                if let Some(v) = args.get(i + 1) {
+                    custom_checkpoint_dir = Some(std::path::PathBuf::from(v));
+                    i += 1;
+                }
+            }
+            "--output-metrics" => {
+                if let Some(v) = args.get(i + 1) {
+                    metrics_path = Some(std::path::PathBuf::from(v));
+                    i += 1;
+                }
             }
             "--batch-size" => {
                 if let Some(v) = args.get(i + 1) {
@@ -77,8 +102,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_dir = workspace_root.join("data");
     let corpus_dir = data_dir.join("corpus");
     let base_dir = workspace_root.join("crates/oniwa-decide");
-    let checkpoint_dir = base_dir.join("checkpoints").join("latest");
-    let best_checkpoint_dir = base_dir.join("checkpoints").join("best");
+
+    // Checkpoint directories: use custom dir or fallback based on config_mode
+    let (checkpoint_dir, best_checkpoint_dir) = if let Some(ref dir) = custom_checkpoint_dir {
+        (dir.join("latest"), dir.join("best"))
+    } else {
+        match config_mode.as_str() {
+            "quaternion_head" => (
+                base_dir.join("checkpoints/quaternion_head/latest"),
+                base_dir.join("checkpoints/quaternion_head/best"),
+            ),
+            "iso_parameter" => (
+                base_dir.join("checkpoints/iso_parameter/latest"),
+                base_dir.join("checkpoints/iso_parameter/best"),
+            ),
+            _ => (
+                base_dir.join("checkpoints/standard_baseline/latest"),
+                base_dir.join("checkpoints/standard_baseline/best"),
+            ),
+        }
+    };
 
     // Initialize tokenizer and dataset generator
     let vocab_path = data_dir.join("vocab.json");
@@ -89,10 +132,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let dataset = DatasetGenerator::load_from_corpus_dir(&corpus_dir)?;
 
-    let config = DecisionConfig {
-        vocab_size: tokenizer.vocab_size(),
-        use_quaternion_head: quaternion_head_mode,
-        ..Default::default()
+    let config = match config_mode.as_str() {
+        "quaternion_head" => DecisionConfig::quaternion_head(tokenizer.vocab_size()),
+        "iso_parameter" => DecisionConfig::iso_parameter(tokenizer.vocab_size()),
+        _ => {
+            if quaternion_head_mode {
+                DecisionConfig::quaternion_head(tokenizer.vocab_size())
+            } else {
+                DecisionConfig::standard_baseline(tokenizer.vocab_size())
+            }
+        }
     };
 
     let mut rng = DeterministicRng::new(seed);
@@ -183,6 +232,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0.0
     };
 
+    #[derive(serde::Serialize)]
+    struct StepMetric {
+        step: usize,
+        loss: f32,
+        choice_acc: f32,
+        noul_acc: f32,
+        score_mae: f32,
+        net_watts: f32,
+    }
+    let mut step_metrics_log: Vec<StepMetric> = Vec::new();
+
     for step in start_step..=target_steps {
         let step_start = Instant::now();
 
@@ -272,12 +332,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (cpu_temp, throttle_ms) = thermal.step_throttle();
         let reading = power_tracker.tick(calc_time, throttle_ms);
 
+        let choice_acc = (correct_choice as f32 / batch_size as f32) * 100.0;
+        let noul_acc = (correct_noul as f32 / batch_size as f32) * 100.0;
+        let score_mae = total_score_err / batch_size as f32;
+
+        if metrics_path.is_some() {
+            step_metrics_log.push(StepMetric {
+                step,
+                loss: mean_loss,
+                choice_acc,
+                noul_acc,
+                score_mae,
+                net_watts: reading.net_watts,
+            });
+        }
+
         // Periodic logging (every 25 steps, or first/last step)
         if step % 25 == 0 || step == start_step || step == target_steps {
-            let choice_acc = (correct_choice as f32 / batch_size as f32) * 100.0;
-            let noul_acc = (correct_noul as f32 / batch_size as f32) * 100.0;
-            let score_mae = total_score_err / batch_size as f32;
-
             println!(
                 "Step {:4}/{} | Loss: {:.4} | Choice Acc: {:5.1}% | Noul Acc: {:5.1}% | Score MAE: {:.3} | Temp: {} | Power: {:.1}W",
                 step,
@@ -297,6 +368,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = model.save_checkpoint(&best_checkpoint_dir, step, mean_loss);
             }
             let _ = model.save_checkpoint(&checkpoint_dir, step, mean_loss);
+        }
+    }
+
+    if let Some(ref m_path) = metrics_path {
+        if let Some(parent) = m_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&step_metrics_log) {
+            let _ = std::fs::write(m_path, json);
+            println!("  📊 Exported execution metrics log to {:?}", m_path);
         }
     }
 

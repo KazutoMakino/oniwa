@@ -73,7 +73,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // 1. Initialize System One (oniwa-decide)
-    let decide_ckpt = workspace_root.join("crates/oniwa-decide/checkpoints/best");
+    let possible_ckpts = [
+        workspace_root.join("crates/oniwa-decide/checkpoints/quaternion_head/best"),
+        workspace_root.join("crates/oniwa-decide/checkpoints/best"),
+        workspace_root.join("crates/oniwa-decide/checkpoints/standard_baseline/best"),
+    ];
+    let decide_ckpt = possible_ckpts
+        .iter()
+        .find(|p| p.join("meta.json").exists())
+        .cloned()
+        .unwrap_or_else(|| workspace_root.join("crates/oniwa-decide/checkpoints/best"));
     let engine = if decide_ckpt.join("meta.json").exists() {
         println!("  🧭 Loaded oniwa-decide checkpoint from {:?}", decide_ckpt);
         DecisionEngine::load_from_dir(&decide_ckpt, tokenizer.clone())?

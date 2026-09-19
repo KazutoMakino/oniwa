@@ -33,8 +33,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         workspace_root.clone()
     };
-    let checkpoint_dir = base_dir.join("checkpoints").join("best");
-
     // Load tokenizer
     let vocab_path = data_dir.join("vocab.json");
     let tokenizer = if vocab_path.exists() {
@@ -42,6 +40,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         CharTokenizer::build_from_text("abcdefghijklmnopqrstuvwxyz 0123456789")
     };
+
+    let possible_ckpts = [
+        base_dir.join("checkpoints/quaternion_head/best"),
+        base_dir.join("checkpoints/best"),
+        base_dir.join("checkpoints/standard_baseline/best"),
+    ];
+    let checkpoint_dir = possible_ckpts
+        .iter()
+        .find(|p| p.join("meta.json").exists())
+        .cloned()
+        .unwrap_or_else(|| base_dir.join("checkpoints/best"));
 
     let engine = if checkpoint_dir.join("meta.json").exists() {
         println!("  💾 Loaded checkpoint: {:?}", checkpoint_dir);
