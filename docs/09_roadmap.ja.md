@@ -248,13 +248,13 @@ flowchart TB
 
 #### Issue: `feat: implement Pure Rust BPE tokenizer`
 
-- [ ] BPEマージペア学習アルゴリズム実装
-- [ ] vocab_size: 4,000〜8,000
-- [ ] 特殊トークン: `<bos>`, `<eos>`, `<pad>`, `<unk>`
-- [ ] BPEエンコーダー/デコーダー実装
-- [ ] CharTokenizerとの切り替えインターフェース
-- [ ] BPEラウンドトリップテスト
-- [ ] `cargo test --workspace` / `cargo clippy` 全パス確認
+- [x] BPEマージペア学習アルゴリズム実装
+- [x] vocab_size: 4,000〜8,000
+- [x] 特殊トークン: `<bos>`, `<eos>`, `<pad>`, `<unk>`
+- [x] BPEエンコーダー/デコーダー実装
+- [x] CharTokenizerとの切り替えインターフェース
+- [x] BPEラウンドトリップテスト
+- [x] `cargo test --workspace` / `cargo clippy` 全パス確認
 
 ---
 

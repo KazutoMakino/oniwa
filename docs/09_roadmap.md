@@ -247,13 +247,13 @@ flowchart TB
 
 #### Issue: `feat: implement Pure Rust BPE tokenizer`
 
-- [ ] Implement BPE merge-pair learning algorithm
-- [ ] Target vocab_size: 4,000–8,000
-- [ ] Special tokens: `<bos>`, `<eos>`, `<pad>`, `<unk>`
-- [ ] Implement BPE encoder/decoder
-- [ ] Switching interface between CharTokenizer and BpeTokenizer
-- [ ] BPE round-trip tests
-- [ ] `cargo test --workspace` / `cargo clippy` all green
+- [x] Implement BPE merge-pair learning algorithm
+- [x] Target vocab_size: 4,000–8,000
+- [x] Special tokens: `<bos>`, `<eos>`, `<pad>`, `<unk>`
+- [x] Implement BPE encoder/decoder
+- [x] Switching interface between CharTokenizer and BpeTokenizer
+- [x] BPE round-trip tests
+- [x] `cargo test --workspace` / `cargo clippy` all green
 
 ---
 
