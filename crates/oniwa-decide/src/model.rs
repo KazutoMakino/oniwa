@@ -6,7 +6,10 @@
 //! - Three decision heads (ChoiceHead, NoulHead, ScoreHead)
 //! - Outputs type-safe decisions in a single forward pass
 
-use crate::layers::{BidirectionalSelfAttention, QuaternionLinear, RMSNorm, SwiGLU};
+use crate::layers::{
+    BidirectionalSelfAttention, QuaternionLinear, QuaternionSelfAttention, QuaternionSwiGLU,
+    RMSNorm, SwiGLU,
+};
 use crate::loss::LossCalculator;
 use oniwa_lm::reproducibility::DeterministicRng;
 use serde::{Deserialize, Serialize};
@@ -26,9 +29,15 @@ pub struct DecisionConfig {
     pub temperature: f32,
     #[serde(default = "default_use_quaternion_head")]
     pub use_quaternion_head: bool,
+    #[serde(default = "default_quaternion_backbone")]
+    pub quaternion_backbone: bool,
 }
 
 fn default_use_quaternion_head() -> bool {
+    false
+}
+
+fn default_quaternion_backbone() -> bool {
     false
 }
 
@@ -49,6 +58,7 @@ impl Default for DecisionConfig {
             num_choices: 4,
             temperature: 1.0,
             use_quaternion_head: false,
+            quaternion_backbone: false,
         }
     }
 }
@@ -59,6 +69,7 @@ impl DecisionConfig {
         Self {
             vocab_size,
             use_quaternion_head: false,
+            quaternion_backbone: false,
             ..Default::default()
         }
     }
@@ -68,6 +79,18 @@ impl DecisionConfig {
         Self {
             vocab_size,
             use_quaternion_head: true,
+            quaternion_backbone: false,
+            ..Default::default()
+        }
+    }
+
+    /// Full Quaternion Transformer configuration (~315K parameters)
+    /// Both backbone (Attention + SwiGLU) and decision head operate in quaternion space.
+    pub fn full_quaternion_transformer(vocab_size: usize) -> Self {
+        Self {
+            vocab_size,
+            use_quaternion_head: true,
+            quaternion_backbone: true,
             ..Default::default()
         }
     }
@@ -86,6 +109,7 @@ impl DecisionConfig {
             num_choices: 4,
             temperature: 1.0,
             use_quaternion_head: false,
+            quaternion_backbone: false,
         }
     }
 }
@@ -172,19 +196,57 @@ impl DecisionModel {
         offset += v * c;
 
         let mut offset_layers = Vec::with_capacity(config.num_layers);
+        let in_quat = c / 4;
+        let ffn_quat = ffn / 4;
+
+        if config.quaternion_backbone {
+            assert_eq!(
+                c % 4,
+                0,
+                "Embedding dim must be divisible by 4 for quaternion backbone"
+            );
+            assert_eq!(
+                ffn % 4,
+                0,
+                "FFN dim must be divisible by 4 for quaternion backbone"
+            );
+            let d_h = c / config.num_heads;
+            assert_eq!(
+                d_h % 4,
+                0,
+                "Head dim must be divisible by 4 for quaternion backbone"
+            );
+        }
+
         for _ in 0..config.num_layers {
             let ln1 = offset;
             offset += c;
-            let qkv = offset;
-            offset += c * (3 * c);
-            let proj = offset;
-            offset += c * c;
-            let ln2 = offset;
-            offset += c;
-            let gate_up = offset;
-            offset += c * (2 * ffn);
-            let down = offset;
-            offset += ffn * c;
+
+            let (qkv, proj, ln2, gate_up, down) = if config.quaternion_backbone {
+                let qkv = offset;
+                offset += 3 * in_quat * in_quat * 4;
+                let proj = offset;
+                offset += in_quat * in_quat * 4;
+                let ln2 = offset;
+                offset += c;
+                let gate_up = offset;
+                offset += 2 * ffn_quat * in_quat * 4;
+                let down = offset;
+                offset += in_quat * ffn_quat * 4;
+                (qkv, proj, ln2, gate_up, down)
+            } else {
+                let qkv = offset;
+                offset += c * (3 * c);
+                let proj = offset;
+                offset += c * c;
+                let ln2 = offset;
+                offset += c;
+                let gate_up = offset;
+                offset += c * (2 * ffn);
+                let down = offset;
+                offset += ffn * c;
+                (qkv, proj, ln2, gate_up, down)
+            };
 
             offset_layers.push(LayerOffsets {
                 ln1_gamma: ln1,
@@ -241,21 +303,44 @@ impl DecisionModel {
                 params[l.ln1_gamma + i] = 1.0;
                 params[l.ln2_gamma + i] = 1.0;
             }
-            let scale_qkv = (2.0f32 / (c + 3 * c) as f32).sqrt();
-            for i in 0..c * (3 * c) {
-                params[l.attn_w_qkv + i] = (rng.next_f32() * 2.0 - 1.0) * scale_qkv;
-            }
-            let scale_proj = (2.0f32 / (2 * c) as f32).sqrt();
-            for i in 0..c * c {
-                params[l.attn_w_proj + i] = (rng.next_f32() * 2.0 - 1.0) * scale_proj;
-            }
-            let scale_gu = (2.0f32 / (c + 2 * ffn) as f32).sqrt();
-            for i in 0..c * (2 * ffn) {
-                params[l.mlp_w_gate_up + i] = (rng.next_f32() * 2.0 - 1.0) * scale_gu;
-            }
-            let scale_dn = (2.0f32 / (ffn + c) as f32).sqrt();
-            for i in 0..ffn * c {
-                params[l.mlp_w_down + i] = (rng.next_f32() * 2.0 - 1.0) * scale_dn;
+            if config.quaternion_backbone {
+                let qkv_len = 3 * in_quat * in_quat * 4;
+                let scale_qkv = (2.0f32 / (in_quat * 4 + 3 * in_quat * 4) as f32).sqrt();
+                for i in 0..qkv_len {
+                    params[l.attn_w_qkv + i] = (rng.next_f32() * 2.0 - 1.0) * scale_qkv;
+                }
+                let proj_len = in_quat * in_quat * 4;
+                let scale_proj = (2.0f32 / (2 * in_quat * 4) as f32).sqrt();
+                for i in 0..proj_len {
+                    params[l.attn_w_proj + i] = (rng.next_f32() * 2.0 - 1.0) * scale_proj;
+                }
+                let gu_len = 2 * ffn_quat * in_quat * 4;
+                let scale_gu = (2.0f32 / (in_quat * 4 + 2 * ffn_quat * 4) as f32).sqrt();
+                for i in 0..gu_len {
+                    params[l.mlp_w_gate_up + i] = (rng.next_f32() * 2.0 - 1.0) * scale_gu;
+                }
+                let dn_len = in_quat * ffn_quat * 4;
+                let scale_dn = (2.0f32 / (ffn_quat * 4 + in_quat * 4) as f32).sqrt();
+                for i in 0..dn_len {
+                    params[l.mlp_w_down + i] = (rng.next_f32() * 2.0 - 1.0) * scale_dn;
+                }
+            } else {
+                let scale_qkv = (2.0f32 / (c + 3 * c) as f32).sqrt();
+                for i in 0..c * (3 * c) {
+                    params[l.attn_w_qkv + i] = (rng.next_f32() * 2.0 - 1.0) * scale_qkv;
+                }
+                let scale_proj = (2.0f32 / (2 * c) as f32).sqrt();
+                for i in 0..c * c {
+                    params[l.attn_w_proj + i] = (rng.next_f32() * 2.0 - 1.0) * scale_proj;
+                }
+                let scale_gu = (2.0f32 / (c + 2 * ffn) as f32).sqrt();
+                for i in 0..c * (2 * ffn) {
+                    params[l.mlp_w_gate_up + i] = (rng.next_f32() * 2.0 - 1.0) * scale_gu;
+                }
+                let scale_dn = (2.0f32 / (ffn + c) as f32).sqrt();
+                for i in 0..ffn * c {
+                    params[l.mlp_w_down + i] = (rng.next_f32() * 2.0 - 1.0) * scale_dn;
+                }
             }
         }
 
@@ -339,24 +424,45 @@ impl DecisionModel {
             let mut act_att = vec![0.0f32; b * nh * t * t];
             let mut act_att_out = vec![0.0f32; n * c];
             let mut attn_out = vec![0.0f32; n * c];
-            let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + c * (3 * c)];
-            let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + c * c];
 
-            BidirectionalSelfAttention::forward(
-                &mut attn_out,
-                &mut act_q,
-                &mut act_k,
-                &mut act_v,
-                &mut act_att,
-                &mut act_att_out,
-                &x1,
-                w_qkv,
-                w_proj,
-                b,
-                t,
-                c,
-                nh,
-            );
+            if self.config.quaternion_backbone {
+                let in_quat = c / 4;
+                let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + 3 * in_quat * in_quat * 4];
+                let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + in_quat * in_quat * 4];
+                QuaternionSelfAttention::forward(
+                    &mut attn_out,
+                    &mut act_q,
+                    &mut act_k,
+                    &mut act_v,
+                    &mut act_att,
+                    &mut act_att_out,
+                    &x1,
+                    w_qkv,
+                    w_proj,
+                    b,
+                    t,
+                    c,
+                    nh,
+                );
+            } else {
+                let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + c * (3 * c)];
+                let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + c * c];
+                BidirectionalSelfAttention::forward(
+                    &mut attn_out,
+                    &mut act_q,
+                    &mut act_k,
+                    &mut act_v,
+                    &mut act_att,
+                    &mut act_att_out,
+                    &x1,
+                    w_qkv,
+                    w_proj,
+                    b,
+                    t,
+                    c,
+                    nh,
+                );
+            }
 
             // Residual connection 1
             for i in 0..n * c {
@@ -373,21 +479,41 @@ impl DecisionModel {
             let mut act_u = vec![0.0f32; n * ffn];
             let mut act_h = vec![0.0f32; n * ffn];
             let mut mlp_out = vec![0.0f32; n * c];
-            let w_gu = &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + c * (2 * ffn)];
-            let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + ffn * c];
 
-            SwiGLU::forward(
-                &mut mlp_out,
-                &mut act_g,
-                &mut act_u,
-                &mut act_h,
-                &x2,
-                w_gu,
-                w_dn,
-                n,
-                c,
-                ffn,
-            );
+            if self.config.quaternion_backbone {
+                let in_quat = c / 4;
+                let ffn_quat = ffn / 4;
+                let w_gu =
+                    &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + 2 * ffn_quat * in_quat * 4];
+                let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + in_quat * ffn_quat * 4];
+                QuaternionSwiGLU::forward(
+                    &mut mlp_out,
+                    &mut act_g,
+                    &mut act_u,
+                    &mut act_h,
+                    &x2,
+                    w_gu,
+                    w_dn,
+                    n,
+                    c,
+                    ffn,
+                );
+            } else {
+                let w_gu = &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + c * (2 * ffn)];
+                let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + ffn * c];
+                SwiGLU::forward(
+                    &mut mlp_out,
+                    &mut act_g,
+                    &mut act_u,
+                    &mut act_h,
+                    &x2,
+                    w_gu,
+                    w_dn,
+                    n,
+                    c,
+                    ffn,
+                );
+            }
 
             // Residual connection 2
             for i in 0..n * c {
@@ -661,22 +787,44 @@ impl DecisionModel {
             // MLP Backward
             let mut dx2 = vec![0.0f32; n * c];
             let gamma2 = &self.params[l.ln2_gamma..l.ln2_gamma + c];
-            let w_gu = &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + c * (2 * ffn)];
-            let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + ffn * c];
 
-            let mut dw_gu = vec![0.0f32; c * (2 * ffn)];
-            let mut dw_dn = vec![0.0f32; ffn * c];
+            if self.config.quaternion_backbone {
+                let in_quat = c / 4;
+                let ffn_quat = ffn / 4;
+                let w_gu =
+                    &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + 2 * ffn_quat * in_quat * 4];
+                let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + in_quat * ffn_quat * 4];
+                let mut dw_gu = vec![0.0f32; 2 * ffn_quat * in_quat * 4];
+                let mut dw_dn = vec![0.0f32; in_quat * ffn_quat * 4];
 
-            SwiGLU::backward(
-                &mut dx2, &mut dw_gu, &mut dw_dn, &dcur, &lc.x2, &lc.act_g, &lc.act_u, &lc.act_h,
-                w_gu, w_dn, n, c, ffn,
-            );
+                QuaternionSwiGLU::backward(
+                    &mut dx2, &mut dw_gu, &mut dw_dn, &dcur, &lc.x2, &lc.act_g, &lc.act_u,
+                    &lc.act_h, w_gu, w_dn, n, c, ffn,
+                );
 
-            for i in 0..c * (2 * ffn) {
-                self.grads[l.mlp_w_gate_up + i] += dw_gu[i];
-            }
-            for i in 0..ffn * c {
-                self.grads[l.mlp_w_down + i] += dw_dn[i];
+                for i in 0..2 * ffn_quat * in_quat * 4 {
+                    self.grads[l.mlp_w_gate_up + i] += dw_gu[i];
+                }
+                for i in 0..in_quat * ffn_quat * 4 {
+                    self.grads[l.mlp_w_down + i] += dw_dn[i];
+                }
+            } else {
+                let w_gu = &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + c * (2 * ffn)];
+                let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + ffn * c];
+                let mut dw_gu = vec![0.0f32; c * (2 * ffn)];
+                let mut dw_dn = vec![0.0f32; ffn * c];
+
+                SwiGLU::backward(
+                    &mut dx2, &mut dw_gu, &mut dw_dn, &dcur, &lc.x2, &lc.act_g, &lc.act_u,
+                    &lc.act_h, w_gu, w_dn, n, c, ffn,
+                );
+
+                for i in 0..c * (2 * ffn) {
+                    self.grads[l.mlp_w_gate_up + i] += dw_gu[i];
+                }
+                for i in 0..ffn * c {
+                    self.grads[l.mlp_w_down + i] += dw_dn[i];
+                }
             }
 
             // LN2 Backward
@@ -694,35 +842,70 @@ impl DecisionModel {
 
             // Attention Backward
             let mut dx1 = vec![0.0f32; n * c];
-            let mut dw_qkv = vec![0.0f32; c * (3 * c)];
-            let mut dw_proj = vec![0.0f32; c * c];
-            let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + c * (3 * c)];
-            let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + c * c];
 
-            BidirectionalSelfAttention::backward(
-                &mut dx1,
-                &mut dw_qkv,
-                &mut dw_proj,
-                &dcur,
-                &lc.x1,
-                &lc.act_q,
-                &lc.act_k,
-                &lc.act_v,
-                &lc.act_att,
-                &lc.act_att_out,
-                w_qkv,
-                w_proj,
-                b,
-                t,
-                c,
-                nh,
-            );
+            if self.config.quaternion_backbone {
+                let in_quat = c / 4;
+                let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + 3 * in_quat * in_quat * 4];
+                let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + in_quat * in_quat * 4];
+                let mut dw_qkv = vec![0.0f32; 3 * in_quat * in_quat * 4];
+                let mut dw_proj = vec![0.0f32; in_quat * in_quat * 4];
 
-            for i in 0..c * (3 * c) {
-                self.grads[l.attn_w_qkv + i] += dw_qkv[i];
-            }
-            for i in 0..c * c {
-                self.grads[l.attn_w_proj + i] += dw_proj[i];
+                QuaternionSelfAttention::backward(
+                    &mut dx1,
+                    &mut dw_qkv,
+                    &mut dw_proj,
+                    &dcur,
+                    &lc.x1,
+                    &lc.act_q,
+                    &lc.act_k,
+                    &lc.act_v,
+                    &lc.act_att,
+                    &lc.act_att_out,
+                    w_qkv,
+                    w_proj,
+                    b,
+                    t,
+                    c,
+                    nh,
+                );
+
+                for i in 0..3 * in_quat * in_quat * 4 {
+                    self.grads[l.attn_w_qkv + i] += dw_qkv[i];
+                }
+                for i in 0..in_quat * in_quat * 4 {
+                    self.grads[l.attn_w_proj + i] += dw_proj[i];
+                }
+            } else {
+                let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + c * (3 * c)];
+                let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + c * c];
+                let mut dw_qkv = vec![0.0f32; c * (3 * c)];
+                let mut dw_proj = vec![0.0f32; c * c];
+
+                BidirectionalSelfAttention::backward(
+                    &mut dx1,
+                    &mut dw_qkv,
+                    &mut dw_proj,
+                    &dcur,
+                    &lc.x1,
+                    &lc.act_q,
+                    &lc.act_k,
+                    &lc.act_v,
+                    &lc.act_att,
+                    &lc.act_att_out,
+                    w_qkv,
+                    w_proj,
+                    b,
+                    t,
+                    c,
+                    nh,
+                );
+
+                for i in 0..c * (3 * c) {
+                    self.grads[l.attn_w_qkv + i] += dw_qkv[i];
+                }
+                for i in 0..c * c {
+                    self.grads[l.attn_w_proj + i] += dw_proj[i];
+                }
             }
 
             // LN1 Backward

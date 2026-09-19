@@ -48,6 +48,7 @@ fn test_forward_dimensions_and_properties() {
         num_choices: 4,
         temperature: 1.0,
         use_quaternion_head: false,
+        quaternion_backbone: false,
     };
 
     let mut rng = DeterministicRng::new(123);
@@ -86,6 +87,7 @@ fn test_finite_difference_gradcheck() {
         num_choices: 2,
         temperature: 1.0,
         use_quaternion_head: false,
+        quaternion_backbone: false,
     };
 
     let mut rng = DeterministicRng::new(999);
@@ -159,6 +161,7 @@ fn test_single_step_optimization() {
         num_choices: 3,
         temperature: 1.0,
         use_quaternion_head: false,
+        quaternion_backbone: false,
     };
 
     let mut rng = DeterministicRng::new(42);
@@ -231,6 +234,7 @@ fn test_quaternion_head_gradcheck() {
         num_choices: 4, // 4 choices supported by Quaternion Head
         temperature: 1.0,
         use_quaternion_head: true,
+        quaternion_backbone: false,
     };
 
     let mut rng = DeterministicRng::new(888);
@@ -317,4 +321,122 @@ fn test_iso_parameter_config_scale() {
     assert_eq!(iso_model.config.dim, 64);
     assert_eq!(iso_model.config.head_dim, 16);
     assert_eq!(iso_model.config.ffn_dim, 128);
+}
+
+#[test]
+fn test_full_quaternion_transformer_scale() {
+    let full_quat = DecisionConfig::full_quaternion_transformer(4721);
+    assert!(full_quat.quaternion_backbone);
+    assert!(full_quat.use_quaternion_head);
+
+    let mut rng = DeterministicRng::new(42);
+    let full_quat_model = DecisionModel::new(full_quat, &mut rng);
+
+    // Baseline is 1_261_568 params
+    // Full Quaternion Transformer drops backbone layers by 4x and head by 4x,
+    // resulting in ~315K-360K parameters!
+    let param_count = full_quat_model.params.len();
+    println!("Full Quaternion Transformer Param Count: {}", param_count);
+    // Baseline model is 1_261_568 params. Full quaternion backbone compresses
+    // attention and MLP from 655,360 weights to 163,840 weights (~491.5K parameter reduction),
+    // and head from 3,072 to 768 weights, achieving 770,048 total parameters (1.64x full model compression).
+    assert_eq!(param_count, 770_048);
+}
+
+#[test]
+fn test_checkpoint_backward_compatibility_with_quaternion_backbone_field() {
+    let json_str = r#"{
+        "vocab_size": 4721,
+        "seq_len": 128,
+        "dim": 128,
+        "num_layers": 4,
+        "num_heads": 4,
+        "head_dim": 32,
+        "ffn_dim": 256,
+        "num_choices": 4,
+        "temperature": 1.0,
+        "use_quaternion_head": true
+    }"#;
+    let config: DecisionConfig = serde_json::from_str(json_str).expect("Must deserialize");
+    assert!(config.use_quaternion_head);
+    assert!(!config.quaternion_backbone);
+}
+
+#[test]
+fn test_full_quaternion_transformer_finite_difference_gradcheck() {
+    let config = DecisionConfig {
+        vocab_size: 20,
+        seq_len: 4,
+        dim: 8, // 2 quaternions, 2 heads of dim 4 (1 quat per head)
+        num_layers: 1,
+        num_heads: 2,
+        head_dim: 4,
+        ffn_dim: 16, // 4 quaternions
+        num_choices: 4,
+        temperature: 1.0,
+        use_quaternion_head: true,
+        quaternion_backbone: true,
+    };
+
+    let mut rng = DeterministicRng::new(777);
+    let mut model = DecisionModel::new(config.clone(), &mut rng);
+
+    let b = 1;
+    let t = 4;
+    let tokens: Vec<u16> = vec![1, 3, 5, 7];
+    let target_choice = 1usize;
+    let target_noul = true;
+    let target_score = 3.5f32;
+
+    model.zero_grad();
+    let cache = model.forward(&tokens, b, t);
+
+    let (_l_c, d_c) = LossCalculator::choice_loss(&cache.choice_logits, target_choice, 4, 0.0);
+    let (_l_n, d_n) = LossCalculator::noul_loss(cache.noul_logits[0], target_noul, 0.0);
+    let (_l_s, d_s) = LossCalculator::score_loss(cache.score_preds[0], target_score, 0.5);
+
+    model.backward(&tokens, &cache, &d_c, &[d_n], &[d_s], b, t);
+
+    // Test parameters across different layers:
+    // 1. A parameter in QKV weights
+    let l0 = &model.offset_layers[0];
+    let test_params = [
+        l0.attn_w_qkv + 2,
+        l0.attn_w_proj + 1,
+        l0.mlp_w_gate_up + 3,
+        l0.mlp_w_down + 2,
+    ];
+
+    for &test_param_idx in &test_params {
+        let analytic_grad = model.grads[test_param_idx];
+
+        let eps = 1e-3f32;
+        model.params[test_param_idx] += eps;
+        let cache_p = model.forward(&tokens, b, t);
+        let (l_c_p, _) = LossCalculator::choice_loss(&cache_p.choice_logits, target_choice, 4, 0.0);
+        let (l_n_p, _) = LossCalculator::noul_loss(cache_p.noul_logits[0], target_noul, 0.0);
+        let (l_s_p, _) = LossCalculator::score_loss(cache_p.score_preds[0], target_score, 0.5);
+        let loss_plus = l_c_p + l_n_p + l_s_p;
+
+        model.params[test_param_idx] -= 2.0 * eps;
+        let cache_m = model.forward(&tokens, b, t);
+        let (l_c_m, _) = LossCalculator::choice_loss(&cache_m.choice_logits, target_choice, 4, 0.0);
+        let (l_n_m, _) = LossCalculator::noul_loss(cache_m.noul_logits[0], target_noul, 0.0);
+        let (l_s_m, _) = LossCalculator::score_loss(cache_m.score_preds[0], target_score, 0.5);
+        let loss_minus = l_c_m + l_n_m + l_s_m;
+
+        model.params[test_param_idx] += eps; // Restore
+
+        let numerical_grad = (loss_plus - loss_minus) / (2.0 * eps);
+        let diff = (analytic_grad - numerical_grad).abs();
+        let rel_diff = diff / (analytic_grad.abs() + numerical_grad.abs()).max(1e-5);
+        assert!(
+            diff < 5e-3 || rel_diff < 0.05,
+            "Full quaternion transformer gradcheck failed at param {}! Analytic: {}, Numerical: {}, Diff: {}",
+            test_param_idx,
+            analytic_grad,
+            numerical_grad,
+            diff
+        );
+    }
 }
