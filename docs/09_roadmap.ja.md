@@ -264,10 +264,10 @@ flowchart TB
 
 #### Issue: `feat: re-tokenize corpus with BPE`
 
-- [ ] `oniwa-pipeline`のトークナイズ処理をBPE対応に更新
-- [ ] 全コーパスをBPEで再トークナイズ
-- [ ] 文書間に`<eos>`区切りトークンを挿入
-- [ ] プロバナンス台帳に記録
+- [x] `oniwa-pipeline`のトークナイズ処理をBPE対応に更新
+- [x] 全コーパスをBPEで再トークナイズ
+- [x] 文書間に`<eos>`区切りトークンを挿入
+- [x] プロバナンス台帳に記録
 
 ---
 

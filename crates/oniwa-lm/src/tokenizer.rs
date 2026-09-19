@@ -265,12 +265,10 @@ impl BpeTokenizer {
             }
         }
 
-        // Represent corpus as list of words/lines, where each item is a Vec of current token strings
-        // To preserve exact text spacing and punctuation, we segment text into whitespace-delimited
-        // or character-chunked words while preserving spaces explicitly.
+        // Represent corpus as list of lines/sentences while keeping newline tokens intact
         let mut sequences: Vec<Vec<String>> = text
-            .lines()
-            .map(|line| line.chars().map(|c| c.to_string()).collect())
+            .split_inclusive('\n')
+            .map(|chunk| chunk.chars().map(|c| c.to_string()).collect())
             .filter(|v: &Vec<String>| !v.is_empty())
             .collect();
 
@@ -360,6 +358,21 @@ impl BpeTokenizer {
         }
     }
 
+    /// Total vocabulary size including special tokens, base characters, and merged subwords
+    pub fn vocab_size(&self) -> usize {
+        self.id_to_token.len()
+    }
+
+    /// Encode text using BPE subword tokens
+    pub fn encode(&self, text: &str) -> Vec<u16> {
+        <Self as Tokenizer>::encode(self, text)
+    }
+
+    /// Decode BPE subword tokens back to UTF-8 text
+    pub fn decode(&self, tokens: &[u16]) -> String {
+        <Self as Tokenizer>::decode(self, tokens)
+    }
+
     /// Rebuild merge_ranks lookup after deserialization
     pub fn rebuild_merge_ranks(&mut self) {
         self.merge_ranks.clear();
@@ -436,6 +449,74 @@ impl BpeTokenizer {
         Ok(tokenizer)
     }
 
+    /// Ingest a list of document strings, inserting `<eos>` between documents, and record in provenance ledger
+    pub fn ingest_documents<P: AsRef<Path>>(
+        documents: &[String],
+        data_dir: P,
+        logs_dir: P,
+        target_vocab_size: usize,
+        source_name: &str,
+        source_url: &str,
+        license: &str,
+    ) -> std::io::Result<Self> {
+        // Concatenate documents for BPE training
+        let mut full_text = String::new();
+        for (i, doc) in documents.iter().enumerate() {
+            if i > 0 {
+                full_text.push('\n');
+            }
+            full_text.push_str(doc);
+        }
+
+        let raw_sha256 = crate::reproducibility::compute_checksum_bytes(full_text.as_bytes());
+
+        let mut tokenizer = Self::train_from_text(&full_text, target_vocab_size);
+        tokenizer.rebuild_merge_ranks();
+
+        // Encode documents with <eos> delimiter between them
+        let mut all_tokens = Vec::new();
+        for (i, doc) in documents.iter().enumerate() {
+            let doc_tokens = tokenizer.encode(doc);
+            all_tokens.extend_from_slice(&doc_tokens);
+            // Append EOS token delimiter at the end of each document
+            all_tokens.push(tokenizer.eos_id);
+            let _ = i;
+        }
+
+        let data_dir_p = data_dir.as_ref();
+        let logs_dir_p = logs_dir.as_ref();
+        std::fs::create_dir_all(data_dir_p)?;
+        std::fs::create_dir_all(logs_dir_p)?;
+
+        // Save BPE vocab and binary
+        tokenizer.save_vocab(data_dir_p.join("bpe_vocab.json"))?;
+        CharTokenizer::save_tokens_bin(&all_tokens, data_dir_p.join("bpe_tokens.bin"))?;
+
+        // Token binary hash
+        let bin_bytes = std::fs::read(data_dir_p.join("bpe_tokens.bin"))?;
+        let tokenized_sha256 = crate::reproducibility::compute_checksum_bytes(&bin_bytes);
+
+        // Record in provenance ledger
+        let mut ledger =
+            crate::logger::ProvenanceLedger::open(logs_dir_p.join("ledger_index.jsonl"))?;
+        ledger.record(&crate::logger::ProvenanceEvent::DataIngestion(
+            crate::logger::DataIngestionLog {
+                timestamp_utc: crate::logger::current_timestamp_utc(),
+                source_name: source_name.to_string(),
+                source_url_or_path: source_url.to_string(),
+                license: license.to_string(),
+                raw_data_sha256: raw_sha256,
+                raw_data_bytes: full_text.len(),
+                tokenized_sha256,
+                num_tokens: all_tokens.len(),
+                vocab_size: tokenizer.vocab_size(),
+                tokenizer_type: "Pure Rust BPE with <eos> Delimiters".to_string(),
+            },
+        ))?;
+
+        Ok(tokenizer)
+    }
+
     /// Internal helper to tokenize a word/chunk with BPE merge rules
     fn tokenize_chunk(&self, chunk: &str) -> Vec<String> {
         if chunk.is_empty() {
@@ -502,9 +583,9 @@ impl Tokenizer for BpeTokenizer {
     fn encode(&self, text: &str) -> Vec<u16> {
         let mut result = Vec::new();
 
-        // Process line by line to keep memory bounded
-        for line in text.lines() {
-            let tokens = self.tokenize_chunk(line);
+        // Process line by line to keep memory bounded while keeping newlines
+        for chunk in text.split_inclusive('\n') {
+            let tokens = self.tokenize_chunk(chunk);
             for t in tokens {
                 if let Some(&id) = self.token_to_id.get(&t) {
                     result.push(id);
@@ -609,11 +690,12 @@ mod tests {
         assert_eq!(tokenizer.vocab_size(), loaded.vocab_size());
         assert_eq!(tokenizer.merges, loaded.merges);
 
-        let sample = "def fibonacci(n):";
+        let sample = "def fibonacci(n):\n    if n <= 1:\n        return n\n";
         let enc1 = tokenizer.encode(sample);
         let enc2 = loaded.encode(sample);
         assert_eq!(enc1, enc2);
-        assert_eq!(tokenizer.decode(&enc1), loaded.decode(&enc2));
+        assert_eq!(tokenizer.decode(&enc1), sample);
+        assert_eq!(loaded.decode(&enc2), sample);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
