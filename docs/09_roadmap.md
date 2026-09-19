@@ -122,22 +122,22 @@ flowchart TB
 
 #### Issue: `feat: implement Quaternion Self-Attention with GHR calculus gradients`
 
-- [ ] Create `src/layers/quaternion_attention.rs`
-- [ ] Implement Q, K, V projections via `QuaternionLinear` (`dim/4` quaternions → `dim/4` quaternions)
+- [x] Create `src/layers/quaternion_attention.rs`
+- [x] Implement Q, K, V projections via `QuaternionLinear` (`dim/4` quaternions → `dim/4` quaternions)
   - Input: interpret $h \in \mathbb{R}^{B \times T \times D}$ as $\mathbb{H}^{B \times T \times D/4}$
   - $Q = W_Q \otimes h$, $K = W_K \otimes h$, $V = W_V \otimes h$ (Hamilton product)
-- [ ] Attention score computation: quaternion inner product (extract real part only)
+- [x] Attention score computation: quaternion inner product (extract real part only)
   - $\text{score}(q_i, k_j) = \text{Re}(q_i \otimes k_j^*) / \sqrt{d_h}$
   - → Single softmax (Shared-Score approach, inspired by Yamauchi et al. ICML 2026)
-- [ ] Bidirectional (unmasked) attention: consistent with existing `oniwa-decide`
-- [ ] RoPE (Rotary Position Embedding) adaptation for quaternion space
-- [ ] Output projection: `QuaternionLinear` ($\mathbb{H}^{D/4} \to \mathbb{H}^{D/4}$)
-- [ ] Derive and implement analytical gradients via GHR calculus
+- [x] Bidirectional (unmasked) attention: consistent with existing `oniwa-decide`
+- [x] RoPE (Rotary Position Embedding) adaptation for quaternion space
+- [x] Output projection: `QuaternionLinear` ($\mathbb{H}^{D/4} \to \mathbb{H}^{D/4}$)
+- [x] Derive and implement analytical gradients via GHR calculus
   - $\nabla_{W_Q} L = \nabla_Q L \otimes h^*$
   - $\nabla_h L = W_Q^* \otimes \nabla_Q L + W_K^* \otimes \nabla_K L + W_V^* \otimes \nabla_V L$
-- [ ] Finite-difference gradient verification test ($|g_\text{ana} - g_\text{num}| < 5 \times 10^{-3}$)
-- [ ] Switchable design between real-valued Attention (`layers/attention.rs`) and Q-Attention
-- [ ] `cargo test --workspace` / `cargo clippy` all green
+- [x] Finite-difference gradient verification test ($|g_\text{ana} - g_\text{num}| < 5 \times 10^{-3}$)
+- [x] Switchable design between real-valued Attention (`layers/attention.rs`) and Q-Attention
+- [x] `cargo test --workspace` / `cargo clippy` all green
 
 ---
 
