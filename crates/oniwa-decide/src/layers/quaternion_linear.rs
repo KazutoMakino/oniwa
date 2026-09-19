@@ -10,7 +10,9 @@
 //! - A QuaternionLinear layer has $4 N_{in} N_{out}$ real weights, yielding a 4x parameter reduction
 //!   while retaining rich cross-component rotational coupling.
 
-use crate::quaternion::Quaternion;
+use crate::simd::{
+    accumulate_backward_din_simd, accumulate_backward_dw_simd, accumulate_hamilton_simd,
+};
 
 pub struct QuaternionLinear;
 
@@ -43,21 +45,21 @@ impl QuaternionLinear {
 
             for j in 0..out_quat {
                 let mut acc = if let Some(b_vec) = bias {
-                    Quaternion::from_slice(&b_vec[j * 4..(j + 1) * 4])
+                    let b_slice: &[f32; 4] = b_vec[j * 4..(j + 1) * 4].try_into().unwrap();
+                    *b_slice
                 } else {
-                    Quaternion::zero()
+                    [0.0f32; 4]
                 };
 
+                let w_row = &weight[j * in_quat * 4..(j + 1) * in_quat * 4];
                 for i in 0..in_quat {
-                    let w_q = Quaternion::from_slice(
-                        &weight[(j * in_quat + i) * 4..(j * in_quat + i + 1) * 4],
-                    );
-                    let x_q = Quaternion::from_slice(&x_b[i * 4..(i + 1) * 4]);
-                    // y_j += W_ji ⊗ x_i
-                    acc = acc + w_q.hamilton_product(&x_q);
+                    let w_q: &[f32; 4] = w_row[i * 4..(i + 1) * 4].try_into().unwrap();
+                    let x_q: &[f32; 4] = x_b[i * 4..(i + 1) * 4].try_into().unwrap();
+                    // y_j += W_ji ⊗ x_i via SIMD
+                    accumulate_hamilton_simd(&mut acc, w_q, x_q);
                 }
 
-                acc.to_slice(&mut out_b[j * 4..(j + 1) * 4]);
+                out_b[j * 4..(j + 1) * 4].copy_from_slice(&acc);
             }
         }
     }
@@ -97,40 +99,32 @@ impl QuaternionLinear {
             let d_in_b = &mut d_in[b * in_dim..(b + 1) * in_dim];
 
             for j in 0..out_quat {
-                let d_y_j = Quaternion::from_slice(&d_out_b[j * 4..(j + 1) * 4]);
+                let d_y_j: &[f32; 4] = d_out_b[j * 4..(j + 1) * 4].try_into().unwrap();
 
                 // Gradient w.r.t bias: d_bias += d_y_j
                 if let Some(ref mut db) = d_bias {
-                    db[j * 4] += d_y_j.w;
-                    db[j * 4 + 1] += d_y_j.x;
-                    db[j * 4 + 2] += d_y_j.y;
-                    db[j * 4 + 3] += d_y_j.z;
+                    db[j * 4] += d_y_j[0];
+                    db[j * 4 + 1] += d_y_j[1];
+                    db[j * 4 + 2] += d_y_j[2];
+                    db[j * 4 + 3] += d_y_j[3];
                 }
 
+                let w_row = &weight[j * in_quat * 4..(j + 1) * in_quat * 4];
+                let dw_row = &mut d_weight[j * in_quat * 4..(j + 1) * in_quat * 4];
+
                 for i in 0..in_quat {
-                    let w_ji = Quaternion::from_slice(
-                        &weight[(j * in_quat + i) * 4..(j * in_quat + i + 1) * 4],
-                    );
-                    let x_i = Quaternion::from_slice(&x_b[i * 4..(i + 1) * 4]);
+                    let w_ji: &[f32; 4] = w_row[i * 4..(i + 1) * 4].try_into().unwrap();
+                    let x_i: &[f32; 4] = x_b[i * 4..(i + 1) * 4].try_into().unwrap();
 
-                    // Given y = W ⊗ x:
-                    // Using real inner product gradient relation:
-                    // d_loss/d_x = W* ⊗ d_loss/d_y
-                    // d_loss/d_W = d_loss/d_y ⊗ x*
-                    let d_x = w_ji.conjugate().hamilton_product(&d_y_j);
-                    let d_w = d_y_j.hamilton_product(&x_i.conjugate());
+                    // d_loss/d_x = W* ⊗ d_loss/d_y via SIMD
+                    let d_in_slot: &mut [f32; 4] =
+                        (&mut d_in_b[i * 4..(i + 1) * 4]).try_into().unwrap();
+                    accumulate_backward_din_simd(d_in_slot, w_ji, d_y_j);
 
-                    let d_in_slot = &mut d_in_b[i * 4..(i + 1) * 4];
-                    d_in_slot[0] += d_x.w;
-                    d_in_slot[1] += d_x.x;
-                    d_in_slot[2] += d_x.y;
-                    d_in_slot[3] += d_x.z;
-
-                    let dw_slot = &mut d_weight[(j * in_quat + i) * 4..(j * in_quat + i + 1) * 4];
-                    dw_slot[0] += d_w.w;
-                    dw_slot[1] += d_w.x;
-                    dw_slot[2] += d_w.y;
-                    dw_slot[3] += d_w.z;
+                    // d_loss/d_W = d_loss/d_y ⊗ x* via SIMD
+                    let dw_slot: &mut [f32; 4] =
+                        (&mut dw_row[i * 4..(i + 1) * 4]).try_into().unwrap();
+                    accumulate_backward_dw_simd(dw_slot, d_y_j, x_i);
                 }
             }
         }
