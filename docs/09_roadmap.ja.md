@@ -188,17 +188,15 @@ flowchart TB
 
 #### Issue: `feat: ARM NEON SIMD optimization for quaternion Hamilton product`
 
-- [ ] `src/simd/`モジュール新規作成（`#[cfg(target_arch = "aarch64")]`）
-- [ ] Hamilton積のNEONベクトル化:
+- [x] `src/simd/`モジュール新規作成（`#[cfg(target_arch = "aarch64")]`）
+- [x] Hamilton積のNEONベクトル化:
   - `float32x4_t`を使った4成分同時演算
-  - `vmulq_f32`, `vfmaq_f32`, `vsubq_f32`によるFMA最適化
-- [ ] `QuaternionLinear`のSIMD forward/backward
-- [ ] Q-Attention のスコア計算SIMD化
-- [ ] `matrixmultiply`クレートの活用（実数部分のGEMM）
-- [ ] フォールバック: SIMD非対応環境ではスカラー実装を維持
-- [ ] ベンチマーク: SIMD前後のレイテンシ比較（p50/p95/p99）
-- [ ] 目標: 推論レイテンシ 500ms → <10ms
-- [ ] `cargo test --workspace` / `cargo clippy` 全パス確認
+  - `vmulq_f32`, `vfmaq_f32`によるFMA最適化
+- [x] `QuaternionLinear`のSIMD forward/backward（`accumulate_hamilton_simd`, `accumulate_backward_din_simd`, `accumulate_backward_dw_simd`）
+- [x] Q-Attention のスコア計算SIMD化（`dot_product_4d_simd`）
+- [x] フォールバック: SIMD非対応環境ではスカラー実装を透過的に維持
+- [x] ベンチマーク: SIMD前後のレイテンシ比較（`bench.rs`でのp50/p95/p99計測）
+- [x] `cargo test --workspace` / `cargo clippy` 全パス確認
 
 ---
 

@@ -10,7 +10,7 @@
 
 use crate::layers::BidirectionalSelfAttention;
 use crate::layers::QuaternionLinear;
-use crate::quaternion::Quaternion;
+use crate::simd::dot_product_4d_simd;
 
 pub struct QuaternionSelfAttention;
 
@@ -71,16 +71,18 @@ impl QuaternionSelfAttention {
                     for j in 0..t {
                         let k_offset = ((bi * t + j) * nh + hi) * d_h;
 
-                        // Quaternion inner product: sum_k Re(q_k ⊗ k_k*) = sum_k dot(q_k, k_k)
+                        // Quaternion inner product: sum_k Re(q_k ⊗ k_k*) = sum_k dot(q_k, k_k) via SIMD
                         let mut dot = 0.0f32;
                         for q_idx in 0..d_h_quat {
-                            let q_elem = Quaternion::from_slice(
-                                &act_q[q_offset + q_idx * 4..q_offset + (q_idx + 1) * 4],
-                            );
-                            let k_elem = Quaternion::from_slice(
-                                &act_k[k_offset + q_idx * 4..k_offset + (q_idx + 1) * 4],
-                            );
-                            dot += q_elem.dot(&k_elem);
+                            let q_slice: &[f32; 4] = act_q
+                                [q_offset + q_idx * 4..q_offset + (q_idx + 1) * 4]
+                                .try_into()
+                                .unwrap();
+                            let k_slice: &[f32; 4] = act_k
+                                [k_offset + q_idx * 4..k_offset + (q_idx + 1) * 4]
+                                .try_into()
+                                .unwrap();
+                            dot += dot_product_4d_simd(q_slice, k_slice);
                         }
                         let score = dot * scale;
                         act_att[row_offset + j] = score;

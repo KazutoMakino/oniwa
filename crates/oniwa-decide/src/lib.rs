@@ -14,6 +14,7 @@ pub mod model;
 pub mod profiler;
 pub mod quaternion;
 pub mod sensor;
+pub mod simd;
 
 pub use dataset::{DatasetGenerator, DocCategory};
 pub use layers::quaternion_linear::QuaternionLinear;

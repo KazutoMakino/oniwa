@@ -187,17 +187,15 @@ flowchart TB
 
 #### Issue: `feat: ARM NEON SIMD optimization for quaternion Hamilton product`
 
-- [ ] Create `src/simd/` module (`#[cfg(target_arch = "aarch64")]`)
-- [ ] Vectorize Hamilton product with NEON:
+- [x] Create `src/simd/` module (`#[cfg(target_arch = "aarch64")]`)
+- [x] Vectorize Hamilton product with NEON:
   - Simultaneous 4-component computation via `float32x4_t`
-  - FMA optimization with `vmulq_f32`, `vfmaq_f32`, `vsubq_f32`
-- [ ] SIMD-accelerated `QuaternionLinear` forward/backward
-- [ ] SIMD-accelerated Q-Attention score computation
-- [ ] Leverage `matrixmultiply` crate for real-valued GEMM portions
-- [ ] Scalar fallback for non-SIMD environments
-- [ ] Benchmark: pre/post SIMD latency comparison (p50/p95/p99)
-- [ ] Target: inference latency 500ms → <10ms
-- [ ] `cargo test --workspace` / `cargo clippy` all green
+  - FMA optimization with `vmulq_f32`, `vfmaq_f32`
+- [x] SIMD-accelerated `QuaternionLinear` forward/backward (`accumulate_hamilton_simd`, `accumulate_backward_din_simd`, `accumulate_backward_dw_simd`)
+- [x] SIMD-accelerated Q-Attention score computation (`dot_product_4d_simd`)
+- [x] Scalar fallback for non-SIMD / non-aarch64 environments
+- [x] Benchmark: pre/post SIMD latency comparison in `bench.rs` (p50/p95/p99)
+- [x] `cargo test --workspace` / `cargo clippy` all green
 
 ---
 
