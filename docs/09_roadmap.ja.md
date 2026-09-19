@@ -232,13 +232,13 @@ flowchart TB
 
 #### Issue: `feat: implement weight tying between token embedding and LM head`
 
-- [ ] `ModelConfig`に`weight_tying: bool`フィールド追加（`#[serde(default)]`）
-- [ ] `ModelLayout`でWeight Tying時に`lm_head`を`wte`と共有
-- [ ] `forward_backward()`でWeight Tying時は`wte`転置を使用
-- [ ] LM Head勾配を`wte`勾配に加算
-- [ ] 既存チェックポイント互換維持
-- [ ] 有限差分勾配検証テスト
-- [ ] `cargo test --workspace` / `cargo clippy` 全パス確認
+- [x] `ModelConfig`に`weight_tying: bool`フィールド追加（`#[serde(default)]`）
+- [x] `ModelLayout`でWeight Tying時に`lm_head`を`wte`と共有
+- [x] `forward_backward()`でWeight Tying時は`wte`転置を使用
+- [x] LM Head勾配を`wte`勾配に加算
+- [x] 既存チェックポイント互換維持
+- [x] 有限差分勾配検証テスト
+- [x] `cargo test --workspace` / `cargo clippy` 全パス確認
 
 ---
 

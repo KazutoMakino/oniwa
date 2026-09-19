@@ -231,13 +231,13 @@ flowchart TB
 
 #### Issue: `feat: implement weight tying between token embedding and LM head`
 
-- [ ] Add `weight_tying: bool` field to `ModelConfig` (`#[serde(default)]`)
-- [ ] Share `lm_head` offset with `wte` in `ModelLayout` when Weight Tying is enabled
-- [ ] Use transposed `wte` in `forward_backward()` when Weight Tying is enabled
-- [ ] Accumulate LM Head gradients into `wte` gradients
-- [ ] Maintain backward compatibility with existing checkpoints
-- [ ] Finite-difference gradient verification test
-- [ ] `cargo test --workspace` / `cargo clippy` all green
+- [x] Add `weight_tying: bool` field to `ModelConfig` (`#[serde(default)]`)
+- [x] Share `lm_head` offset with `wte` in `ModelLayout` when Weight Tying is enabled
+- [x] Use transposed `wte` in `forward_backward()` when Weight Tying is enabled
+- [x] Accumulate LM Head gradients into `wte` gradients
+- [x] Maintain backward compatibility with existing checkpoints
+- [x] Finite-difference gradient verification test
+- [x] `cargo test --workspace` / `cargo clippy` all green
 
 ---
 
