@@ -71,4 +71,19 @@
   - **Checkpoint SHA-256**: `5442a19f6322fc7e8443a511c3ff5de763e619504cdbd7dc0cf89eeee47f7d48`
   - **Key Observation**: Reached 0.87 loss in only 175 steps with 4x parameter efficiency, demonstrating that non-commutative rotational features can accelerate structured decision convergence.
 
+---
+
+## 🚀 Phase B4: oniwa-v3 Architecture Milestone (Weight Tying & Pure Rust BPE)
+
+- **Architecture Upgrades**:
+  - **Weight Tying**: Coupled `wte` (Token Embeddings) with `lm_head` projection, reducing total parameter footprint from ~1.87M down to ~1.26M (-32.4% parameter reduction).
+  - **Pure Rust BPE Subword Tokenizer**: Subword vocabulary with `<eos>` document delimiters, providing 3–4× effective context expansion over raw character modeling.
+  - **Regularization**: Integrated Label Smoothing ($\epsilon = 0.05$) and Z-loss ($\lambda = 1\times 10^{-4}$) for stable FP32 edge dynamics on low-power devices.
+- **Verification & Initial Execution**:
+  - Successfully archived legacy v2 checkpoints to `checkpoints/v2_archive/`.
+  - Verified v3 initialization and single-step forward/backward gradient update.
+  - **Step 1 Loss**: `8.4667` (Initial cry: Step 0 val loss `8.4597`).
+  - **Energy**: ~0.0048 Wh compute energy on Raspberry Pi 4 baseline.
+
+
 

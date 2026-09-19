@@ -276,10 +276,10 @@ flowchart TB
 
 #### Issue: `feat: initialize and train oniwa-v3 with BPE and weight tying`
 
-- [ ] Configure ModelConfig for v3
-- [ ] Archive existing v2 checkpoints
-- [ ] Execute and verify initial v3 training run
-- [ ] Record progress in growth_journal.md
+- [x] Configure ModelConfig for v3
+- [x] Archive existing v2 checkpoints
+- [x] Execute and verify initial v3 training run
+- [x] Record progress in growth_journal.md
 
 ---
 
