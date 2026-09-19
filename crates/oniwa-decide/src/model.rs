@@ -53,6 +53,43 @@ impl Default for DecisionConfig {
     }
 }
 
+impl DecisionConfig {
+    /// Standard baseline configuration (~1.26M parameters)
+    pub fn standard_baseline(vocab_size: usize) -> Self {
+        Self {
+            vocab_size,
+            use_quaternion_head: false,
+            ..Default::default()
+        }
+    }
+
+    /// Quaternion head configuration (~1.26M parameters with 4x compressed head)
+    pub fn quaternion_head(vocab_size: usize) -> Self {
+        Self {
+            vocab_size,
+            use_quaternion_head: true,
+            ..Default::default()
+        }
+    }
+
+    /// Iso-parameter configuration (~315K parameters matching Full Q-Transformer scale)
+    /// Shrinks hidden dimension from 128 to 64, head_dim from 32 to 16, and ffn_dim from 256 to 128
+    pub fn iso_parameter(vocab_size: usize) -> Self {
+        Self {
+            vocab_size,
+            seq_len: 128,
+            dim: 64,
+            num_layers: 4,
+            num_heads: 4,
+            head_dim: 16,
+            ffn_dim: 128,
+            num_choices: 4,
+            temperature: 1.0,
+            use_quaternion_head: false,
+        }
+    }
+}
+
 /// Decision output for a single sample
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RawDecision {

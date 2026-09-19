@@ -301,3 +301,20 @@ fn test_checkpoint_backward_compatibility_with_quaternion_field() {
     let config: DecisionConfig = serde_json::from_str(json_str).expect("Must deserialize");
     assert!(!config.use_quaternion_head);
 }
+
+#[test]
+fn test_iso_parameter_config_scale() {
+    let standard = DecisionConfig::standard_baseline(4721);
+    let mut rng = DeterministicRng::new(42);
+    let standard_model = DecisionModel::new(standard, &mut rng);
+    assert_eq!(standard_model.params.len(), 1_261_568);
+
+    let iso = DecisionConfig::iso_parameter(4721);
+    let iso_model = DecisionModel::new(iso, &mut rng);
+    // Iso parameter model scales down parameters to ~315K-400K range
+    assert!(iso_model.params.len() < 500_000);
+    assert!(iso_model.params.len() > 250_000);
+    assert_eq!(iso_model.config.dim, 64);
+    assert_eq!(iso_model.config.head_dim, 16);
+    assert_eq!(iso_model.config.ffn_dim, 128);
+}
