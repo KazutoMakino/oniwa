@@ -20,7 +20,9 @@ pub mod layers;
 pub mod logger;
 pub mod model;
 pub mod power;
+pub mod quaternion;
 pub mod reproducibility;
+pub mod simd;
 pub mod thermal;
 pub mod tokenizer;
 
