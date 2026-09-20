@@ -91,6 +91,23 @@ impl Default for ModelConfig {
 }
 
 impl ModelConfig {
+    /// Scale v2 preset optimized for Raspberry Pi 4 (L2 cache 1MB) and QuaternionLMHead
+    /// (dim: 192, layers: 6, heads: 6, head_dim: 32, ffn_dim: 384, seq_len: 256)
+    pub fn scale_v2(vocab_size: usize) -> Self {
+        Self {
+            vocab_size,
+            seq_len: 256,
+            dim: 192,
+            num_layers: 6,
+            num_heads: 6,
+            head_dim: 32,
+            ffn_dim: 384,
+            label_smoothing: default_label_smoothing(),
+            z_loss_weight: default_z_loss_weight(),
+            weight_tying: true,
+        }
+    }
+
     /// Restore ModelConfig from meta.json (with backward-compatible fallback for older checkpoints)
     pub fn from_meta_json<P: AsRef<std::path::Path>>(meta_path: P) -> std::io::Result<Self> {
         let content = std::fs::read_to_string(meta_path)?;
@@ -1434,6 +1451,30 @@ impl QuaternionModelWeights {
             }
         }
 
+        if let Some(dim) = meta["dim"].as_u64() {
+            if dim as usize != self.config.dim {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "Dimension mismatch: checkpoint dim {} != model dim {}",
+                        dim, self.config.dim
+                    ),
+                ));
+            }
+        }
+
+        if let Some(seq_len) = meta["seq_len"].as_u64() {
+            if seq_len as usize != self.config.seq_len {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "Sequence length mismatch: checkpoint seq_len {} != model seq_len {}",
+                        seq_len, self.config.seq_len
+                    ),
+                ));
+            }
+        }
+
         let step = meta["step"].as_u64().unwrap_or(0) as usize;
         let loss = meta["loss"].as_f64().unwrap_or(0.0) as f32;
         let seed = meta["seed"].as_u64().unwrap_or(0);
@@ -2486,5 +2527,24 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_scale_v2_preset_and_quaternion() {
+        let mut rng = DeterministicRng::new(42);
+        let config = ModelConfig::scale_v2(5000);
+        assert_eq!(config.dim, 192);
+        assert_eq!(config.num_layers, 6);
+        assert_eq!(config.num_heads, 6);
+        assert_eq!(config.head_dim, 32);
+        assert_eq!(config.ffn_dim, 384);
+        assert_eq!(config.seq_len, 256);
+        assert_eq!(config.dim % 4, 0);
+        assert_eq!(config.dim / config.num_heads, config.head_dim);
+        assert!(config.weight_tying);
+
+        let model = QuaternionModelWeights::new(config, &mut rng);
+        assert_eq!(model.config.dim, 192);
+        assert_eq!(model.config.seq_len, 256);
     }
 }
