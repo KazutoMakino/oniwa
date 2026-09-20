@@ -57,6 +57,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bpe_mode = false;
     let mut bpe_vocab_size = 4096usize;
     let mut quaternion_mode = false;
+    let mut scale_v2_mode = false;
+    let mut epochs_arg: Option<usize> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -150,6 +152,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--quaternion" => {
                 quaternion_mode = true;
+            }
+            "--scale-v2" => {
+                scale_v2_mode = true;
+            }
+            "--epochs" => {
+                if let Some(val) = args.get(i + 1) {
+                    epochs_arg = val.parse().ok();
+                    i += 1;
+                }
             }
             _ => {}
         }
@@ -257,7 +268,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[2/4] ⚙️ Initializing model & deterministic seed (oniwa-v3)...");
     let mut rng = DeterministicRng::new(seed);
 
-    let checkpoint_dir = if quaternion_mode {
+    let checkpoint_dir = if scale_v2_mode {
+        base_dir.join("checkpoints").join("scale_v2").join("latest")
+    } else if quaternion_mode {
         base_dir
             .join("checkpoints")
             .join("quaternion")
@@ -265,7 +278,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         base_dir.join("checkpoints").join("latest")
     };
-    let best_checkpoint_dir = if quaternion_mode {
+    let best_checkpoint_dir = if scale_v2_mode {
+        base_dir.join("checkpoints").join("scale_v2").join("best")
+    } else if quaternion_mode {
         base_dir.join("checkpoints").join("quaternion").join("best")
     } else {
         base_dir.join("checkpoints").join("best")
@@ -278,19 +293,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 c.vocab_size = tokenizer.vocab_size();
                 c
             }
-            Err(_) => ModelConfig {
-                vocab_size: tokenizer.vocab_size(),
-                seq_len: 128,
-                dim: 128,
-                num_layers: 4,
-                num_heads: 4,
-                head_dim: 32,
-                ffn_dim: 256,
-                label_smoothing,
-                z_loss_weight,
-                weight_tying: true,
-            },
+            Err(_) => {
+                if scale_v2_mode {
+                    let mut c = ModelConfig::scale_v2(tokenizer.vocab_size());
+                    c.label_smoothing = label_smoothing;
+                    c.z_loss_weight = z_loss_weight;
+                    c
+                } else {
+                    ModelConfig {
+                        vocab_size: tokenizer.vocab_size(),
+                        seq_len: 128,
+                        dim: 128,
+                        num_layers: 4,
+                        num_heads: 4,
+                        head_dim: 32,
+                        ffn_dim: 256,
+                        label_smoothing,
+                        z_loss_weight,
+                        weight_tying: true,
+                    }
+                }
+            }
         }
+    } else if scale_v2_mode {
+        let mut c = ModelConfig::scale_v2(tokenizer.vocab_size());
+        c.label_smoothing = label_smoothing;
+        c.z_loss_weight = z_loss_weight;
+        c
     } else {
         ModelConfig {
             vocab_size: tokenizer.vocab_size(),
@@ -674,6 +703,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         journal_md.flush()?;
 
         let json_entry = serde_json::json!({
+            "timestamp_utc": oniwa_lm::logger::current_timestamp_utc(),
             "step": 0,
             "loss": 8.34,
             "val_loss": val_0,
@@ -711,8 +741,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---------------------------------------------------------
     // 5. Training loop configuration
     // ---------------------------------------------------------
+    let batch_size = 4;
+    let tokens_per_step = batch_size * config.seq_len;
+    let steps_per_epoch = (train_tokens.len() / tokens_per_step).max(1);
+
     let target_steps = if infinite_mode {
         usize::MAX
+    } else if let Some(epochs) = epochs_arg {
+        let total_epoch_steps = steps_per_epoch * epochs;
+        println!(
+            "  📚 Epoch-driven training target: {} epoch(s) = {} steps (1 epoch = {} steps for {} tokens)",
+            epochs, total_epoch_steps, steps_per_epoch, train_tokens.len()
+        );
+        (start_step - 1) + total_epoch_steps
     } else if let Some(add) = add_steps_arg {
         (start_step - 1) + add
     } else if let Some(steps) = num_steps_arg {
@@ -732,8 +773,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             150
         }
     };
-
-    let batch_size = 4;
     let max_lr = 0.003f32;
     let min_lr = 0.0003f32;
     let total_session_steps = target_steps.saturating_sub(start_step - 1);
@@ -758,6 +797,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_time = Instant::now();
     let mut step = start_step;
     let mut last_loss = 0.0f32;
+    let mut best_val_step = start_step;
+    let early_stopping_patience = 500usize;
 
     loop {
         if !infinite_mode && step > target_steps {
@@ -788,6 +829,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         model.zero_grad();
         let (loss, grad_norm) =
             model.forward_backward(&x_batch, &y_batch, batch_size, config.seq_len);
+
+        // Safety Guard: Check for NaN or Inf divergence
+        if loss.is_nan() || loss.is_infinite() {
+            eprintln!(
+                "\n⚠️ [Safety Stop] Loss diverged to {} at Step {}! Triggering emergency halt and preserving best weights.",
+                loss, step
+            );
+            break;
+        }
 
         // 3. AdamW update
         model.adamw_step(lr, wd, 0.9, 0.999, 1e-8, step);
@@ -827,9 +877,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let step_elapsed = step_start.elapsed().as_millis();
 
         // 6. Create structured step log
+        let current_epoch = (step.saturating_sub(1) / steps_per_epoch) + 1;
         let step_log = TrainingStepLog {
+            timestamp_utc: oniwa_lm::logger::current_timestamp_utc(),
             step,
-            epoch: 1,
+            epoch: current_epoch,
             loss,
             val_loss: val_loss_opt,
             learning_rate: lr,
@@ -886,9 +938,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Auto-save best checkpoint
+            let mut improved = false;
             if val_loss_val < best_val_loss {
                 let prev_best = best_val_loss;
                 best_val_loss = val_loss_val;
+                best_val_step = step;
+                improved = true;
                 let _ =
                     model.save_checkpoint(&best_checkpoint_dir, step, val_loss_val, current_seed);
                 if prev_best.is_infinite() {
@@ -899,6 +954,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     println!("  🏆 [Best Updated] Val Loss: {:.4} -> {:.4} -> saved to `checkpoints/best`", prev_best, val_loss_val);
                 }
+            }
+
+            // Early stopping check (patience = 500 steps without validation loss improvement)
+            if !improved && step.saturating_sub(best_val_step) >= early_stopping_patience {
+                println!(
+                    "\n🛑 [Early Stopping] Validation loss has not improved for {} steps (Best: {:.4} at Step {}). Gracefully stopping.",
+                    step.saturating_sub(best_val_step),
+                    best_val_loss,
+                    best_val_step
+                );
+                break;
             }
 
             // Intermediate generation samples (multiple probes autoregressive sampling)
@@ -930,6 +996,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 journal_md.flush()?;
 
                 let json_entry = serde_json::json!({
+                    "timestamp_utc": oniwa_lm::logger::current_timestamp_utc(),
                     "step": step,
                     "train_loss": loss,
                     "val_loss": val_loss_val,

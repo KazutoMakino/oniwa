@@ -25,14 +25,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let vocab_path = data_dir.join("vocab.json");
 
-    // Parse command-line arguments (--checkpoint best / latest, --quaternion)
+    // Parse command-line arguments (--checkpoint best / latest, --quaternion, --scale-v2)
     let args: Vec<String> = std::env::args().collect();
     let mut requested_checkpoint: Option<String> = None;
     let mut quaternion_mode = false;
+    let mut scale_v2_mode = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--checkpoint" => {
+            "--checkpoint" | "--checkpoint-dir" => {
                 if let Some(val) = args.get(i + 1) {
                     requested_checkpoint = Some(val.clone());
                     i += 1;
@@ -47,12 +48,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--quaternion" => {
                 quaternion_mode = true;
             }
+            "--scale-v2" => {
+                scale_v2_mode = true;
+            }
             _ => {}
         }
         i += 1;
     }
 
-    let (best_dir, latest_dir) = if quaternion_mode {
+    let (best_dir, latest_dir) = if scale_v2_mode {
+        (
+            base_dir.join("checkpoints").join("scale_v2").join("best"),
+            base_dir.join("checkpoints").join("scale_v2").join("latest"),
+        )
+    } else if quaternion_mode {
         (
             base_dir.join("checkpoints").join("quaternion").join("best"),
             base_dir
@@ -70,7 +79,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (checkpoint_dir, checkpoint_tag) = match requested_checkpoint.as_deref() {
         Some("best") => (
             best_dir,
-            if quaternion_mode {
+            if scale_v2_mode {
+                "🏆 Best Scale v2 Model (checkpoints/scale_v2/best)"
+            } else if quaternion_mode {
                 "🏆 Best Quaternion Model (checkpoints/quaternion/best)"
             } else {
                 "🏆 Best Model (checkpoints/best)"
@@ -78,18 +89,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         Some("latest") => (
             latest_dir,
-            if quaternion_mode {
+            if scale_v2_mode {
+                "⏱️ Latest Scale v2 Model (checkpoints/scale_v2/latest)"
+            } else if quaternion_mode {
                 "⏱️ Latest Quaternion Model (checkpoints/quaternion/latest)"
             } else {
                 "⏱️ Latest Model (checkpoints/latest)"
             },
         ),
-        Some(custom) => (base_dir.join(custom), "📁 Custom Checkpoint"),
+        Some(custom) => {
+            let p = std::path::PathBuf::from(custom);
+            let resolved = if p.is_absolute() || p.exists() {
+                p
+            } else {
+                base_dir.join(custom)
+            };
+            (resolved, "📁 Custom Checkpoint")
+        }
         None => {
             if best_dir.join("meta.json").exists() {
                 (
                     best_dir,
-                    if quaternion_mode {
+                    if scale_v2_mode {
+                        "🏆 Best Scale v2 Model (checkpoints/scale_v2/best: auto-selected)"
+                    } else if quaternion_mode {
                         "🏆 Best Quaternion Model (checkpoints/quaternion/best: auto-selected)"
                     } else {
                         "🏆 Best Model (checkpoints/best: auto-selected)"
@@ -98,7 +121,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 (
                     latest_dir,
-                    if quaternion_mode {
+                    if scale_v2_mode {
+                        "⏱️ Latest Scale v2 Model (checkpoints/scale_v2/latest: auto-selected)"
+                    } else if quaternion_mode {
                         "⏱️ Latest Quaternion Model (checkpoints/quaternion/latest: auto-selected)"
                     } else {
                         "⏱️ Latest Model (checkpoints/latest: auto-selected)"

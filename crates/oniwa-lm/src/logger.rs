@@ -76,6 +76,8 @@ pub struct ModelConfigInfo {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TrainingStepLog {
+    #[serde(default)]
+    pub timestamp_utc: String,
     pub step: usize,
     pub epoch: usize,
     pub loss: f32,
@@ -344,9 +346,10 @@ mod tests {
             }))
             .unwrap();
 
-        // 3. Record training step (with temperature)
+        // 3. Record training step (with temperature and timestamp)
         ledger
             .record(&ProvenanceEvent::TrainingStep(TrainingStepLog {
+                timestamp_utc: "2026-09-21T00:00:00Z".into(),
                 step: 100,
                 epoch: 1,
                 loss: 3.125,
@@ -388,7 +391,14 @@ mod tests {
         assert!(lines[1].contains("\"event_type\":\"DataIngestion\""));
         assert!(lines[2].contains("\"cpu_temp_c\":68.5"));
         assert!(lines[2].contains("\"throttle_sleep_ms\":25"));
+        assert!(lines[2].contains("\"timestamp_utc\":\"2026-09-21T00:00:00Z\""));
         assert!(lines[3].contains("\"event_type\":\"Inference\""));
+
+        // Backward compatibility check for TrainingStepLog without timestamp_utc
+        let legacy_json = r#"{"step":50,"epoch":1,"loss":4.5,"learning_rate":0.001,"grad_norm":0.1,"elapsed_ms":100,"cpu_temp_c":null,"throttle_sleep_ms":0,"estimated_power_w":4.0,"accumulated_energy_wh":0.05,"param_checksum":null}"#;
+        let parsed: TrainingStepLog = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(parsed.step, 50);
+        assert_eq!(parsed.timestamp_utc, "");
 
         // Cleanup
         let _ = std::fs::remove_file(ledger_path);
