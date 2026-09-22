@@ -1,9 +1,114 @@
 //! Comprehensive Unit Tests for oniwa-decide
 
+use oniwa_decide::dataset::killer_patterns::KillerPatternDataset;
 use oniwa_decide::dataset::DocCategory;
 use oniwa_decide::loss::LossCalculator;
+use oniwa_decide::memory::FlatMemoryLayout;
+use oniwa_decide::mlm::apply_mlm_mask;
 use oniwa_decide::model::{DecisionConfig, DecisionModel};
 use oniwa_lm::reproducibility::DeterministicRng;
+use oniwa_lm::tokenizer::CharTokenizer;
+use std::io::Cursor;
+
+#[test]
+fn flat_memory_layout_keeps_system1_target_below_100_mb() {
+    let config = DecisionConfig::system1_mlm();
+    let layout = FlatMemoryLayout::for_training(&config, 4);
+
+    assert_eq!(layout.embedding_elements(), 4_096 * 256);
+    assert!(layout.total_bytes() <= 100 * 1024 * 1024);
+    assert_eq!(
+        layout.total_elements() * std::mem::size_of::<f32>(),
+        layout.total_bytes()
+    );
+}
+
+#[test]
+fn mlm_masking_keeps_labels_only_for_selected_tokens() {
+    let mut rng = DeterministicRng::new(7);
+    let original: Vec<u16> = (1..=20).collect();
+    let masked = apply_mlm_mask(&original, 64, 0, &mut rng);
+
+    assert_eq!(masked.tokens.len(), original.len());
+    assert_eq!(
+        masked
+            .labels
+            .iter()
+            .filter(|&&label| label != u16::MAX)
+            .count(),
+        3
+    );
+    for (index, &label) in masked.labels.iter().enumerate() {
+        if label != u16::MAX {
+            assert_eq!(label, original[index]);
+        }
+    }
+}
+
+#[test]
+fn killer_pattern_jsonl_writes_encoded_tokens_to_supplied_slice() {
+    let jsonl = concat!(
+        r#"{"id":"kp_0001","text":"ab","labels":{"choice":2,"noul":0.0,"score":0.75},"mask_indices":[1]}"#,
+        "\n"
+    );
+    let dataset = KillerPatternDataset::from_jsonl_reader(Cursor::new(jsonl)).unwrap();
+    let tokenizer = CharTokenizer::build_from_text("ab");
+    let mut destination = [99u16; 4];
+
+    let labels = dataset
+        .write_batch(&tokenizer, 0, &mut destination)
+        .unwrap();
+
+    assert_eq!(destination, [0, 1, 0, 0]);
+    assert_eq!(labels.choice, 2);
+    assert!(!labels.noul);
+    assert_eq!(labels.score, 0.75);
+    assert_eq!(labels.mask_indices, &[1]);
+}
+
+#[test]
+fn tied_mlm_projection_backpropagates_into_shared_embeddings() {
+    let config = DecisionConfig {
+        vocab_size: 8,
+        seq_len: 2,
+        dim: 8,
+        num_layers: 1,
+        num_heads: 2,
+        head_dim: 4,
+        ffn_dim: 16,
+        num_choices: 2,
+        temperature: 1.0,
+        use_quaternion_head: false,
+        quaternion_backbone: false,
+        score_unit_interval: false,
+    };
+    let mut model = DecisionModel::new(config.clone(), &mut DeterministicRng::new(11));
+    let tokens = [1u16, 2];
+    let cache = model.forward(&tokens, 1, 2);
+    assert_eq!(cache.mlm_logits.len(), 2 * config.vocab_size);
+
+    let (_loss, gradients) = LossCalculator::masked_language_model_loss(
+        &cache.mlm_logits,
+        &[1, u16::MAX],
+        config.vocab_size,
+    );
+    model.zero_grad();
+    model.backward_with_mlm(
+        &tokens,
+        &cache,
+        &[0.0, 0.0],
+        &[0.0],
+        &[0.0],
+        &gradients,
+        1,
+        2,
+    );
+    assert!(
+        model.grads[model.offset_wte..model.offset_wte + config.vocab_size * config.dim]
+            .iter()
+            .any(|gradient| gradient.abs() > 0.0)
+    );
+}
 
 #[test]
 fn test_loss_functions() {
@@ -49,6 +154,7 @@ fn test_forward_dimensions_and_properties() {
         temperature: 1.0,
         use_quaternion_head: false,
         quaternion_backbone: false,
+        score_unit_interval: false,
     };
 
     let mut rng = DeterministicRng::new(123);
@@ -88,6 +194,7 @@ fn test_finite_difference_gradcheck() {
         temperature: 1.0,
         use_quaternion_head: false,
         quaternion_backbone: false,
+        score_unit_interval: false,
     };
 
     let mut rng = DeterministicRng::new(999);
@@ -162,6 +269,7 @@ fn test_single_step_optimization() {
         temperature: 1.0,
         use_quaternion_head: false,
         quaternion_backbone: false,
+        score_unit_interval: false,
     };
 
     let mut rng = DeterministicRng::new(42);
@@ -235,6 +343,7 @@ fn test_quaternion_head_gradcheck() {
         temperature: 1.0,
         use_quaternion_head: true,
         quaternion_backbone: false,
+        score_unit_interval: false,
     };
 
     let mut rng = DeterministicRng::new(888);
@@ -376,6 +485,7 @@ fn test_full_quaternion_transformer_finite_difference_gradcheck() {
         temperature: 1.0,
         use_quaternion_head: true,
         quaternion_backbone: true,
+        score_unit_interval: false,
     };
 
     let mut rng = DeterministicRng::new(777);

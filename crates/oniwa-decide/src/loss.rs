@@ -25,7 +25,7 @@ impl Default for LossConfig {
             huber_delta: 0.5,
             choice_weight: 1.0,
             noul_weight: 1.0,
-            score_weight: 0.5,
+            score_weight: 1.0,
         }
     }
 }
@@ -33,6 +33,37 @@ impl Default for LossConfig {
 pub struct LossCalculator;
 
 impl LossCalculator {
+    /// Cross-entropy over selected MLM positions. `u16::MAX` excludes a position.
+    pub fn masked_language_model_loss(
+        logits: &[f32],
+        labels: &[u16],
+        vocab_size: usize,
+    ) -> (f32, Vec<f32>) {
+        assert_eq!(logits.len(), labels.len() * vocab_size);
+        let mut loss = 0.0;
+        let mut gradients = vec![0.0; logits.len()];
+        let selected = labels
+            .iter()
+            .filter(|&&label| label != u16::MAX)
+            .count()
+            .max(1) as f32;
+        for (position, &label) in labels.iter().enumerate() {
+            if label == u16::MAX {
+                continue;
+            }
+            let offset = position * vocab_size;
+            let probs = Self::softmax(&logits[offset..offset + vocab_size], 1.0);
+            let target = label as usize;
+            assert!(target < vocab_size, "MLM label is outside the vocabulary");
+            loss -= probs[target].max(1e-12).ln();
+            for token in 0..vocab_size {
+                gradients[offset + token] =
+                    (probs[token] - usize::from(token == target) as f32) / selected;
+            }
+        }
+        (loss / selected, gradients)
+    }
+
     /// Compute Softmax with temperature scaling
     pub fn softmax(logits: &[f32], temperature: f32) -> Vec<f32> {
         let temp = temperature.max(1e-4);

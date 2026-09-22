@@ -161,6 +161,12 @@ impl CharTokenizer {
 pub trait Tokenizer: Send + Sync {
     fn vocab_size(&self) -> usize;
     fn encode(&self, text: &str) -> Vec<u16>;
+    fn encode_into(&self, text: &str, destination: &mut [u16]) -> usize {
+        let tokens = self.encode(text);
+        let written = tokens.len().min(destination.len());
+        destination[..written].copy_from_slice(&tokens[..written]);
+        written
+    }
     fn decode(&self, tokens: &[u16]) -> String;
     fn token_to_id(&self, token: &str) -> Option<u16>;
     fn id_to_token(&self, id: u16) -> Option<String>;
@@ -173,6 +179,21 @@ impl Tokenizer for CharTokenizer {
 
     fn encode(&self, text: &str) -> Vec<u16> {
         self.encode(text)
+    }
+
+    fn encode_into(&self, text: &str, destination: &mut [u16]) -> usize {
+        let mut written = 0;
+        for ch in text.chars() {
+            let Some(&token) = self.char_to_id.get(&ch) else {
+                continue;
+            };
+            if written == destination.len() {
+                break;
+            }
+            destination[written] = token;
+            written += 1;
+        }
+        written
     }
 
     fn decode(&self, tokens: &[u16]) -> String {
@@ -197,7 +218,7 @@ impl Tokenizer for CharTokenizer {
 ///
 /// Features:
 /// - 100% Pure Rust implementation without external Python or HuggingFace dependencies.
-/// - Base character vocabulary + deterministic pair merge iterations.
+/// - Base byte vocabulary + deterministic pair merge iterations.
 /// - Special tokens (`<unk>`, `<bos>`, `<eos>`, `<pad>`).
 /// - Deterministic tie-breaking for identical pair frequencies (lexicographic).
 /// - Fast subword tokenization and lossless UTF-8 reconstruction.
@@ -224,23 +245,24 @@ impl BpeTokenizer {
     pub const BOS: &'static str = "<bos>";
     pub const EOS: &'static str = "<eos>";
     pub const PAD: &'static str = "<pad>";
+    pub const MASK: &'static str = "<mask>";
 
     /// Train a BPE vocabulary and merge rules from a text corpus
     /// Note: `target_vocab_size` is the goal vocabulary size. The base vocabulary will include
-    /// special tokens (4) plus all unique characters in `text`. If `target_vocab_size` is greater than
+    /// special tokens (5) plus all unique UTF-8 bytes in `text`. If `target_vocab_size` is greater than
     /// the base vocabulary, BPE merges are executed until reaching `target_vocab_size` or until
     /// no further frequent pairs exist.
     pub fn train_from_text(text: &str, target_vocab_size: usize) -> Self {
         assert!(
-            target_vocab_size >= 4,
-            "target_vocab_size must be at least 4 for special tokens"
+            target_vocab_size >= 5,
+            "target_vocab_size must be at least 5 for special tokens"
         );
 
         let mut token_to_id = BTreeMap::new();
         let mut id_to_token = Vec::new();
 
         // 1. Register special tokens
-        let special_tokens = [Self::UNK, Self::BOS, Self::EOS, Self::PAD];
+        let special_tokens = [Self::UNK, Self::BOS, Self::EOS, Self::PAD, Self::MASK];
         for (i, &st) in special_tokens.iter().enumerate() {
             let id = i as u16;
             token_to_id.insert(st.to_string(), id);
@@ -251,13 +273,14 @@ impl BpeTokenizer {
         let eos_id = 2u16;
         let pad_id = 3u16;
 
-        // 2. Collect unique characters from text as base alphabet
-        let mut unique_chars: Vec<char> = text.chars().collect();
-        unique_chars.sort();
-        unique_chars.dedup();
+        // 2. Collect every UTF-8 byte as the base alphabet. A byte is represented by the
+        // corresponding U+0000..U+00FF scalar only inside the serializable vocabulary table.
+        let mut unique_bytes = text.as_bytes().to_vec();
+        unique_bytes.sort_unstable();
+        unique_bytes.dedup();
 
-        for ch in unique_chars {
-            let s = ch.to_string();
+        for byte in unique_bytes {
+            let s = (byte as char).to_string();
             if !token_to_id.contains_key(&s) {
                 let id = id_to_token.len() as u16;
                 token_to_id.insert(s.clone(), id);
@@ -265,10 +288,16 @@ impl BpeTokenizer {
             }
         }
 
-        // Represent corpus as list of lines/sentences while keeping newline tokens intact
+        // Represent the corpus as byte symbols. Newlines are ordinary bytes, so round-trips are exact.
         let mut sequences: Vec<Vec<String>> = text
-            .split_inclusive('\n')
-            .map(|chunk| chunk.chars().map(|c| c.to_string()).collect())
+            .as_bytes()
+            .split_inclusive(|&byte| byte == b'\n')
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .map(|&byte| (byte as char).to_string())
+                    .collect()
+            })
             .filter(|v: &Vec<String>| !v.is_empty())
             .collect();
 
@@ -517,14 +546,16 @@ impl BpeTokenizer {
         Ok(tokenizer)
     }
 
-    /// Internal helper to tokenize a word/chunk with BPE merge rules
+    /// Internal helper to tokenize a byte chunk with BPE merge rules.
     fn tokenize_chunk(&self, chunk: &str) -> Vec<String> {
         if chunk.is_empty() {
             return Vec::new();
         }
 
-        // Start with characters
-        let mut tokens: Vec<String> = chunk.chars().map(|c| c.to_string()).collect();
+        let mut tokens: Vec<String> = chunk
+            .bytes()
+            .map(|byte| (byte as char).to_string())
+            .collect();
 
         if tokens.len() < 2 {
             return tokens;
@@ -583,14 +614,15 @@ impl Tokenizer for BpeTokenizer {
     fn encode(&self, text: &str) -> Vec<u16> {
         let mut result = Vec::new();
 
-        // Process line by line to keep memory bounded while keeping newlines
-        for chunk in text.split_inclusive('\n') {
+        // Process line by line to keep memory bounded while keeping newline bytes.
+        for chunk in text.as_bytes().split_inclusive(|&byte| byte == b'\n') {
+            let chunk = std::str::from_utf8(chunk).expect("text bytes are valid UTF-8");
             let tokens = self.tokenize_chunk(chunk);
             for t in tokens {
                 if let Some(&id) = self.token_to_id.get(&t) {
                     result.push(id);
                 } else {
-                    // Fallback to char-level or unknown token
+                    // Fallback to byte-level or unknown token.
                     for ch in t.chars() {
                         let ch_s = ch.to_string();
                         if let Some(&id) = self.token_to_id.get(&ch_s) {
@@ -606,16 +638,53 @@ impl Tokenizer for BpeTokenizer {
         result
     }
 
+    fn encode_into(&self, text: &str, destination: &mut [u16]) -> usize {
+        let mut written = 0;
+        for chunk in text.as_bytes().split_inclusive(|&byte| byte == b'\n') {
+            let chunk = std::str::from_utf8(chunk).expect("text bytes are valid UTF-8");
+            for token in self.tokenize_chunk(chunk) {
+                if let Some(&id) = self.token_to_id.get(&token) {
+                    if written == destination.len() {
+                        return written;
+                    }
+                    destination[written] = id;
+                    written += 1;
+                } else {
+                    for ch in token.chars() {
+                        if written == destination.len() {
+                            return written;
+                        }
+                        destination[written] = self
+                            .token_to_id
+                            .get(&ch.to_string())
+                            .copied()
+                            .unwrap_or(self.unk_id);
+                        written += 1;
+                    }
+                }
+            }
+        }
+        written
+    }
+
     fn decode(&self, tokens: &[u16]) -> String {
+        let mut bytes = Vec::new();
         let mut out = String::new();
         for &tid in tokens {
             if let Some(tok) = self.id_to_token.get(tid as usize) {
-                if tok == Self::BOS || tok == Self::EOS || tok == Self::PAD {
+                if tok == Self::BOS || tok == Self::EOS || tok == Self::PAD || tok == Self::MASK {
                     continue;
                 }
-                out.push_str(tok);
+                if tok == Self::UNK {
+                    out.push_str(&String::from_utf8_lossy(&bytes));
+                    bytes.clear();
+                    out.push_str(Self::UNK);
+                } else {
+                    bytes.extend(tok.chars().map(|ch| ch as u8));
+                }
             }
         }
+        out.push_str(&String::from_utf8_lossy(&bytes));
         out
     }
 
@@ -725,10 +794,10 @@ mod tests {
         assert_eq!(tokenizer.eos_id, 2);
         assert_eq!(tokenizer.pad_id, 3);
 
-        // Encoding compression check: BPE token count should be strictly smaller than char count for repeated text
+        // Encoding compression check against the byte-level source representation.
         let sample = "ニャーニャー泣いていた事だけは記憶している。";
         let encoded = tokenizer.encode(sample);
-        let char_count = sample.chars().count();
+        let char_count = sample.len();
         assert!(
             encoded.len() <= char_count,
             "encoded len {} should be <= char count {}",

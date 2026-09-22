@@ -9,6 +9,7 @@ use oniwa_lm::power::PowerTracker;
 use oniwa_lm::reproducibility::DeterministicRng;
 use oniwa_lm::thermal::{ThermalConfig, ThermalController};
 use oniwa_lm::tokenizer::CharTokenizer;
+use oniwa_lm::tokenizer::{BpeTokenizer, Tokenizer};
 use sha2::Digest;
 use std::env;
 use std::time::Instant;
@@ -31,6 +32,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut config_mode = "standard".to_string(); // "standard", "quaternion_head", "full_quaternion", "iso_parameter"
     let mut custom_checkpoint_dir: Option<std::path::PathBuf> = None;
     let mut metrics_path: Option<std::path::PathBuf> = None;
+    let mut bpe_path: Option<std::path::PathBuf> = None;
+    let mut killer_patterns_path: Option<std::path::PathBuf> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -93,6 +96,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     i += 1;
                 }
             }
+            "--bpe" => {
+                if let Some(v) = args.get(i + 1) {
+                    bpe_path = Some(std::path::PathBuf::from(v));
+                    i += 1;
+                }
+            }
+            "--data" => {
+                if let Some(v) = args.get(i + 1) {
+                    killer_patterns_path = Some(std::path::PathBuf::from(v));
+                    i += 1;
+                }
+            }
             _ => {}
         }
         i += 1;
@@ -129,17 +144,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize tokenizer and dataset generator
     let vocab_path = data_dir.join("vocab.json");
-    let tokenizer = if vocab_path.exists() {
-        CharTokenizer::load_vocab(&vocab_path)?
+    let using_bpe = bpe_path.is_some();
+    let tokenizer: Box<dyn Tokenizer> = if let Some(path) = bpe_path {
+        Box::new(BpeTokenizer::load_vocab(path)?)
+    } else if vocab_path.exists() {
+        Box::new(CharTokenizer::load_vocab(&vocab_path)?)
     } else {
-        CharTokenizer::build_from_text("abcdefghijklmnopqrstuvwxyz 0123456789")
+        Box::new(CharTokenizer::build_from_text(
+            "abcdefghijklmnopqrstuvwxyz 0123456789",
+        ))
     };
     let dataset = DatasetGenerator::load_from_corpus_dir(&corpus_dir)?;
+    let killer_patterns = killer_patterns_path
+        .map(|path| {
+            std::fs::File::open(path).and_then(
+                oniwa_decide::dataset::killer_patterns::KillerPatternDataset::from_jsonl_reader,
+            )
+        })
+        .transpose()?;
+    if killer_patterns.is_some() && (!using_bpe || tokenizer.vocab_size() != 4_096) {
+        return Err("--data requires a 4,096-token BPE vocabulary supplied by --bpe".into());
+    }
 
     let config = match config_mode.as_str() {
         "full_quaternion" => DecisionConfig::full_quaternion_transformer(tokenizer.vocab_size()),
         "quaternion_head" => DecisionConfig::quaternion_head(tokenizer.vocab_size()),
         "iso_parameter" => DecisionConfig::iso_parameter(tokenizer.vocab_size()),
+        _ if killer_patterns.is_some() => DecisionConfig::system1_mlm(),
         _ => {
             if quaternion_head_mode {
                 DecisionConfig::quaternion_head(tokenizer.vocab_size())
@@ -148,6 +179,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     };
+    if killer_patterns.is_some() {
+        let layout = oniwa_decide::memory::FlatMemoryLayout::for_training(&config, batch_size);
+        if !layout.fits_system1_budget() {
+            return Err(format!(
+                "System 1 training footprint {} bytes exceeds the 100 MiB budget",
+                layout.total_bytes()
+            )
+            .into());
+        }
+    }
 
     let mut rng = DeterministicRng::new(seed);
     let mut model = DecisionModel::new(config.clone(), &mut rng);
@@ -252,18 +293,69 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let step_start = Instant::now();
 
         // 1. Batch generation
-        let (tokens, target_choices, target_nouls, target_scores) =
-            dataset.generate_batch(&tokenizer, batch_size, config.seq_len, &mut rng);
+        let (tokens, target_choices, target_nouls, target_scores, mask_indices) =
+            if let Some(patterns) = &killer_patterns {
+                let mut tokens = vec![0u16; batch_size * config.seq_len];
+                let mut choices = Vec::with_capacity(batch_size);
+                let mut nouls = Vec::with_capacity(batch_size);
+                let mut scores = Vec::with_capacity(batch_size);
+                let mut mask_indices = Vec::new();
+                for bi in 0..batch_size {
+                    let labels = patterns.write_batch(
+                        &*tokenizer,
+                        bi % patterns.len(),
+                        &mut tokens[bi * config.seq_len..(bi + 1) * config.seq_len],
+                    )?;
+                    choices.push(labels.choice);
+                    nouls.push(labels.noul);
+                    scores.push(labels.score);
+                    mask_indices.extend(
+                        labels
+                            .mask_indices
+                            .iter()
+                            .map(|&index| bi * config.seq_len + index),
+                    );
+                }
+                (tokens, choices, nouls, scores, mask_indices)
+            } else {
+                let (tokens, choices, nouls, scores) =
+                    dataset.generate_batch(&*tokenizer, batch_size, config.seq_len, &mut rng);
+                (tokens, choices, nouls, scores, Vec::new())
+            };
+
+        let mask_token = if using_bpe {
+            tokenizer
+                .token_to_id(BpeTokenizer::MASK)
+                .ok_or("BPE vocabulary has no <mask> token; regenerate it with train-bpe")?
+        } else {
+            0
+        };
+        let masked = if mask_indices.is_empty() {
+            oniwa_decide::mlm::apply_mlm_mask(&tokens, config.vocab_size, mask_token, &mut rng)
+        } else {
+            oniwa_decide::mlm::apply_mlm_mask_at_indices(
+                &tokens,
+                config.vocab_size,
+                mask_token,
+                &mask_indices,
+                &mut rng,
+            )?
+        };
 
         // 2. Forward pass
         model.zero_grad();
-        let cache = model.forward(&tokens, batch_size, config.seq_len);
+        let cache = model.forward(&masked.tokens, batch_size, config.seq_len);
 
         // 3. Loss computation
         let mut total_loss = 0.0f32;
         let mut dchoice_logits = vec![0.0f32; batch_size * config.num_choices];
         let mut dnoul_logits = vec![0.0f32; batch_size];
         let mut dscore_preds = vec![0.0f32; batch_size];
+        let (mlm_loss, mut dmlm_logits) = LossCalculator::masked_language_model_loss(
+            &cache.mlm_logits,
+            &masked.labels,
+            config.vocab_size,
+        );
 
         let mut correct_choice = 0;
         let mut correct_noul = 0;
@@ -314,16 +406,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             total_score_err += (score_pred - target_scores[bi]).abs();
         }
 
-        let mean_loss = total_loss / (batch_size as f32);
+        let mean_loss = total_loss / (batch_size as f32) + 0.2 * mlm_loss;
         final_loss = mean_loss;
+        for gradient in &mut dmlm_logits {
+            *gradient *= 0.2;
+        }
 
         // 4. Backward pass
-        model.backward(
-            &tokens,
+        model.backward_with_mlm(
+            &masked.tokens,
             &cache,
             &dchoice_logits,
             &dnoul_logits,
             &dscore_preds,
+            &dmlm_logits,
             batch_size,
             config.seq_len,
         );
