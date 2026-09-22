@@ -5,6 +5,10 @@
 </p>
 
 
+
+> [!NOTE]
+> **Current Specification**: This document reflects the foundational/historical design. For current production specifications (Byte-level BPE, MLM multi-task learning, 100MB memory budget, and quaternion algebra integration), please refer to the latest primary specification: [10. ONIWA Production Roadmap Specification](10_system_integration_roadmap.md). Historical revisions are tracked via Git commit history and release tags.
+
 In the "Kitchen Garden & Clean AI (`oniwa-lm`)" philosophy, **Full Provenance Logging** and **Deterministic Reproducibility** form the core foundation upholding the integrity and trustworthiness of the project.
 
 This document specifies the logging formats, determinism guarantees, and concrete mitigation steps to prevent out-of-memory (OOM) errors during compilation on memory-constrained devices like Raspberry Pi 4 (2GB–4GB RAM).

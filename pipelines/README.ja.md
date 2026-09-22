@@ -4,7 +4,7 @@
   <a href="README.md">English</a> | <b>日本語</b>
 </p>
 
-ONIWA プロジェクトにおける「クリーンな土壌づくり（出自が100%追跡可能なオープンデータ収集・前処理）」を担当する専用クレート（`oniwa-pipeline`）です。
+ONIWA プロジェクトにおける「クリーンな土壌づくり（出自が100%追跡可能なオープンデータ収集・前処理・トークナイザー構築）」を担当する専用クレート（`oniwa-pipeline`）です。
 
 ---
 
@@ -18,12 +18,15 @@ ONIWA プロジェクトにおける「クリーンな土壌づくり（出自�
    - ルビ記法（`｜親文字《るび》`、`漢字《るび》`）、入力者注記（`［＃...］`）、法令XMLタグの自動除去と正規化。
 4. **透明な監査台帳（Provenance Ledger）記録**:
    - 取得した全作品・法令の名称、原典URL、法的根拠、SHA-256ハッシュ、文字数を `logs/ledger_index.jsonl` に完全記録。
-5. **マルチソース統合コーパス生成**:
-   - クレンジング済みテキスト群を一括結合し、モデル学習用の `data/tokens.bin` と `data/vocab.json` を再生成。
+5. **マルチソース統合コーパス生成 & BPEトークナイザー学習**:
+   - クレンジング済みテキスト群を一括結合し、統合テキストコーパス（`data/corpus_combined.txt`）を生成。
+   - 外部依存ゼロの Pure Rust による **Byte-level BPE（語彙サイズ 4,096）** 学習ツール（`train-bpe`）により、語彙マージテーブルを構築・保存。
 
 ---
 
-## 使い方 (`oniwa-dataset`)
+## 使い方
+
+### 1. データセット収集・コーパス生成 (`oniwa-dataset`)
 
 ```bash
 # ① 青空文庫プリセット名作＋e-Gov基本法令を一括取得し、統合コーパスを再生成
@@ -40,4 +43,13 @@ cargo run --release -p oniwa-pipeline -- --author "夏目漱石" --limit 5 --bui
 
 # ⑤ 現在の収集状況と監査台帳の確認
 cargo run --release -p oniwa-pipeline -- --status
+```
+
+### 2. Pure Rust Byte-level BPE トークナイザー学習 (`train-bpe`)
+
+文字単位（Char-level）によるコンテキスト長不足を解決するため、統合コーパスから 4,096 語彙の BPE トークナイザーを学習・出力します：
+
+```bash
+# 統合コーパスから 4,096 語彙の BPE 語彙ファイルを生成
+cargo run --release -p oniwa-pipeline --bin train-bpe -- --input data/corpus_combined.txt --vocab-size 4096 --output data/bpe_vocab.json
 ```

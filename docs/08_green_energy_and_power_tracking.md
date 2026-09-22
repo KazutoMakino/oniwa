@@ -5,6 +5,10 @@
 </p>
 
 
+
+> [!NOTE]
+> **Current Specification**: This document reflects the foundational/historical design. For current production specifications (Byte-level BPE, MLM multi-task learning, 100MB memory budget, and quaternion algebra integration), please refer to the latest primary specification: [10. ONIWA Production Roadmap Specification](10_system_integration_roadmap.md). Historical revisions are tracked via Git commit history and release tags.
+
 Training frontier AI models by mega-corporations consumes hundreds of megawatts to gigawatt-hours per run, generating environmental burdens comparable to entire small cities or nuclear plants.
 
 As a direct antithesis, `oniwa-lm` incorporates a **Green & Eco Provenance Engine** that tracks, records, and verifies **energy consumption, power dissipation, and carbon emissions at every single training step in real time**.
