@@ -31,6 +31,8 @@ pub struct DecisionConfig {
     pub use_quaternion_head: bool,
     #[serde(default = "default_quaternion_backbone")]
     pub quaternion_backbone: bool,
+    #[serde(default)]
+    pub score_unit_interval: bool,
 }
 
 fn default_use_quaternion_head() -> bool {
@@ -59,17 +61,36 @@ impl Default for DecisionConfig {
             temperature: 1.0,
             use_quaternion_head: false,
             quaternion_backbone: false,
+            score_unit_interval: false,
         }
     }
 }
 
 impl DecisionConfig {
+    /// System 1 target: V=4096, d_model=256, T=128, B=4 fits the 100 MiB budget.
+    pub fn system1_mlm() -> Self {
+        Self {
+            vocab_size: 4_096,
+            seq_len: 128,
+            dim: 256,
+            num_layers: 4,
+            num_heads: 4,
+            head_dim: 64,
+            ffn_dim: 1_024,
+            num_choices: 4,
+            temperature: 1.0,
+            use_quaternion_head: true,
+            quaternion_backbone: true,
+            score_unit_interval: true,
+        }
+    }
     /// Standard baseline configuration (~1.26M parameters)
     pub fn standard_baseline(vocab_size: usize) -> Self {
         Self {
             vocab_size,
             use_quaternion_head: false,
             quaternion_backbone: false,
+            score_unit_interval: false,
             ..Default::default()
         }
     }
@@ -80,6 +101,7 @@ impl DecisionConfig {
             vocab_size,
             use_quaternion_head: true,
             quaternion_backbone: false,
+            score_unit_interval: false,
             ..Default::default()
         }
     }
@@ -91,6 +113,7 @@ impl DecisionConfig {
             vocab_size,
             use_quaternion_head: true,
             quaternion_backbone: true,
+            score_unit_interval: false,
             ..Default::default()
         }
     }
@@ -110,6 +133,7 @@ impl DecisionConfig {
             temperature: 1.0,
             use_quaternion_head: false,
             quaternion_backbone: false,
+            score_unit_interval: false,
         }
     }
 }
@@ -181,6 +205,7 @@ pub struct ForwardCache {
     pub choice_logits: Vec<f32>, // [B, num_choices]
     pub noul_logits: Vec<f32>,   // [B]
     pub score_preds: Vec<f32>,   // [B]
+    pub mlm_logits: Vec<f32>,    // [B, T, vocab_size], tied to input embeddings
     pub quat_head_out: Vec<f32>, // [B, 24] Optional cache for Quaternion Head backward pass
 }
 
@@ -399,6 +424,7 @@ impl DecisionModel {
         let nh = self.config.num_heads;
         let ffn = self.config.ffn_dim;
         let num_choices = self.config.num_choices;
+        let vocab_size = self.config.vocab_size;
 
         // 1. Embedding
         let mut cur = vec![0.0f32; n * c];
@@ -543,6 +569,18 @@ impl DecisionModel {
         let gamma_f = &self.params[self.offset_ln_f..self.offset_ln_f + c];
         RMSNorm::forward(&mut norm_f_out, &mut rstd_f, &cur, gamma_f, n, c, 1e-5);
 
+        // Tied MLM projection: each token state is scored against the input embedding table.
+        let mut mlm_logits = vec![0.0f32; n * vocab_size];
+        for position in 0..n {
+            let h = &norm_f_out[position * c..(position + 1) * c];
+            for token in 0..vocab_size {
+                let w =
+                    &self.params[self.offset_wte + token * c..self.offset_wte + (token + 1) * c];
+                mlm_logits[position * vocab_size + token] =
+                    h.iter().zip(w).map(|(a, b)| a * b).sum();
+            }
+        }
+
         // 4. Mean Pooling: pooled [B, C]
         let mut pooled = vec![0.0f32; b * c];
         let inv_t = 1.0f32 / (t as f32);
@@ -592,7 +630,12 @@ impl DecisionModel {
 
                 // Score prediction from real part w of output quaternion 5
                 let s_dot = q_out_bi[5 * 4];
-                score_preds[bi] = 3.0 + 2.0 * (s_dot * 0.5).tanh();
+                let tanh = (s_dot * 0.5).tanh();
+                score_preds[bi] = if self.config.score_unit_interval {
+                    0.5 + 0.5 * tanh
+                } else {
+                    3.0 + 2.0 * tanh
+                };
             }
         } else {
             let w_hc =
@@ -624,7 +667,12 @@ impl DecisionModel {
                 for j in 0..c {
                     dot_s += h[j] * w_hs[j];
                 }
-                score_preds[bi] = 3.0 + 2.0 * (dot_s * 0.5).tanh();
+                let tanh = (dot_s * 0.5).tanh();
+                score_preds[bi] = if self.config.score_unit_interval {
+                    0.5 + 0.5 * tanh
+                } else {
+                    3.0 + 2.0 * tanh
+                };
             }
         }
 
@@ -637,6 +685,7 @@ impl DecisionModel {
             choice_logits,
             noul_logits,
             score_preds,
+            mlm_logits,
             quat_head_out,
         }
     }
@@ -650,6 +699,31 @@ impl DecisionModel {
         dchoice_logits: &[f32],
         dnoul_logits: &[f32],
         dscore_preds: &[f32],
+        b: usize,
+        t: usize,
+    ) {
+        self.backward_with_mlm(
+            tokens,
+            cache,
+            dchoice_logits,
+            dnoul_logits,
+            dscore_preds,
+            &[],
+            b,
+            t,
+        );
+    }
+
+    /// Backward pass with optional tied-embedding MLM gradients.
+    #[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+    pub fn backward_with_mlm(
+        &mut self,
+        tokens: &[u16],
+        cache: &ForwardCache,
+        dchoice_logits: &[f32],
+        dnoul_logits: &[f32],
+        dscore_preds: &[f32],
+        dmlm_logits: &[f32],
         b: usize,
         t: usize,
     ) {
@@ -681,8 +755,17 @@ impl DecisionModel {
 
                 // Score head gradient -> d_loss / d(w_5)
                 // y = 3.0 + 2.0 * tanh(s_dot * 0.5)
-                let tanh_u = (cache.score_preds[bi] - 3.0) / 2.0;
-                let d_dots = dscore_preds[bi] * (1.0 - tanh_u * tanh_u);
+                let tanh_u = if self.config.score_unit_interval {
+                    2.0 * cache.score_preds[bi] - 1.0
+                } else {
+                    (cache.score_preds[bi] - 3.0) / 2.0
+                };
+                let output_scale = if self.config.score_unit_interval {
+                    0.25
+                } else {
+                    1.0
+                };
+                let d_dots = dscore_preds[bi] * output_scale * (1.0 - tanh_u * tanh_u);
                 d_q_bi[5 * 4] = d_dots;
             }
 
@@ -731,8 +814,17 @@ impl DecisionModel {
                 }
 
                 // Score head backward pass: y = 3.0 + 2.0 * tanh(u), u = 0.5 * (h . w_hs)
-                let tanh_u = (cache.score_preds[bi] - 3.0) / 2.0;
-                let d_dots = dscore_preds[bi] * (1.0 - tanh_u * tanh_u);
+                let tanh_u = if self.config.score_unit_interval {
+                    2.0 * cache.score_preds[bi] - 1.0
+                } else {
+                    (cache.score_preds[bi] - 3.0) / 2.0
+                };
+                let output_scale = if self.config.score_unit_interval {
+                    0.25
+                } else {
+                    1.0
+                };
+                let d_dots = dscore_preds[bi] * output_scale * (1.0 - tanh_u * tanh_u);
                 for j in 0..c {
                     dh[j] += d_dots * w_hs[j];
                     self.grads[self.offset_head_score + j] += h[j] * d_dots;
@@ -749,6 +841,25 @@ impl DecisionModel {
                 let tok_offset = (bi * t + ti) * c;
                 for j in 0..c {
                     d_norm_f_out[tok_offset + j] = dh[j] * inv_t;
+                }
+            }
+        }
+
+        // MLM gradients enter before mean pooling and also update the tied embedding rows.
+        if !dmlm_logits.is_empty() {
+            assert_eq!(dmlm_logits.len(), n * self.config.vocab_size);
+            for position in 0..n {
+                let h = &cache.norm_f_out[position * c..(position + 1) * c];
+                for token in 0..self.config.vocab_size {
+                    let gradient = dmlm_logits[position * self.config.vocab_size + token];
+                    if gradient == 0.0 {
+                        continue;
+                    }
+                    let weight_offset = self.offset_wte + token * c;
+                    for j in 0..c {
+                        d_norm_f_out[position * c + j] += gradient * self.params[weight_offset + j];
+                        self.grads[weight_offset + j] += gradient * h[j];
+                    }
                 }
             }
         }

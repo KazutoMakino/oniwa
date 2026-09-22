@@ -10,6 +10,8 @@
 pub mod dataset;
 pub mod layers;
 pub mod loss;
+pub mod memory;
+pub mod mlm;
 pub mod model;
 pub mod profiler;
 pub mod quaternion;

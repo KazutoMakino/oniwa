@@ -7,9 +7,11 @@
 //! - Score: Syntactic complexity (1.0 to 5.0)
 
 use oniwa_lm::reproducibility::DeterministicRng;
-use oniwa_lm::tokenizer::CharTokenizer;
+use oniwa_lm::tokenizer::Tokenizer;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+pub mod killer_patterns;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DocCategory {
@@ -206,7 +208,7 @@ impl DatasetGenerator {
     /// Generate batch
     pub fn generate_batch(
         &self,
-        tokenizer: &CharTokenizer,
+        tokenizer: &dyn Tokenizer,
         batch_size: usize,
         seq_len: usize,
         rng: &mut DeterministicRng,
