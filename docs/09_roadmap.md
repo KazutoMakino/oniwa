@@ -4,6 +4,10 @@
   <b>English</b> | <a href="09_roadmap.ja.md">日本語 (Japanese)</a>
 </p>
 
+
+> [!NOTE]
+> **Current Specification**: This document reflects the academic quaternion research roadmap. For current production specifications (Byte-level BPE, MLM multi-task learning, 100MB memory budget, and quaternion algebra integration), please refer to the latest primary specification: [10. ONIWA Production Roadmap Specification](10_system_integration_roadmap.md). Historical revisions are tracked via Git commit history and release tags.
+
 > **Created**: September 19, 2026
 > **Scope**: Short-term (1–3 months) + Mid/Long-term Outlook
 > **Strategy**: Dual-track parallel — Track A (oniwa-decide Quaternion Research) 🔴 Top Priority + Track B (oniwa-lm Quality Improvement) 🟡

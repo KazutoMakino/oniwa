@@ -5,6 +5,10 @@
 </p>
 
 
+
+> [!NOTE]
+> **Current Specification**: This document reflects the foundational/historical design. For current production specifications (Byte-level BPE, MLM multi-task learning, 100MB memory budget, and quaternion algebra integration), please refer to the latest primary specification: [10. ONIWA Production Roadmap Specification](10_system_integration_roadmap.md). Historical revisions are tracked via Git commit history and release tags.
+
 GPT-2, the archetype of `llm.c`, was based on the classical Transformer architecture of 2019.
 In contemporary open model designs (e.g. Gemma, Llama 3), **Modern Transformer Primitives** have become the de facto standard to eliminate computational bottlenecks, maximize representation capacity, and optimize memory bandwidth.
 

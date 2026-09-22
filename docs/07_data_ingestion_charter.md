@@ -5,6 +5,10 @@
 </p>
 
 
+
+> [!NOTE]
+> **Current Specification**: This document reflects the foundational/historical design. For current production specifications (Byte-level BPE, MLM multi-task learning, 100MB memory budget, and quaternion algebra integration), please refer to the latest primary specification: [10. ONIWA Production Roadmap Specification](10_system_integration_roadmap.md). Historical revisions are tracked via Git commit history and release tags.
+
 The "Kitchen Garden & Organic AI (`oniwa-lm`)" philosophy prioritizes **transparency, legality, and etiquette toward remote servers** far above data volume or acquisition speed.
 
 This charter defines the engineering etiquette and legal compliance standards governing all data ingestion pipelines.
