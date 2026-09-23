@@ -450,15 +450,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Periodic logging (every 25 steps, or first/last step)
         if step % 25 == 0 || step == start_step || step == target_steps {
+            let timestamp_prefix = format!("[{}]", oniwa_lm::logger::current_utc_display());
             println!(
-                "Step {:4}/{} | Loss: {:.4} | Choice Acc: {:5.1}% | Noul Acc: {:5.1}% | Score MAE: {:.3} | Temp: {} | Power: {:.1}W",
+                "{} Step {:4}/{} | Loss: {:.4} | Choice Acc: {:5.1}% | Noul Acc: {:5.1}% | Score MAE: {:.3} | Temp: {} | Power: {:.1}W",
+                timestamp_prefix,
                 step,
                 target_steps,
                 mean_loss,
                 choice_acc,
                 noul_acc,
                 score_mae,
-                cpu_temp.map(|t| format!("{:.1}C", t)).unwrap_or_else(|| "N/A".into()),
+                cpu_temp.map(|t| format!("{:.1} degC", t)).unwrap_or_else(|| "N/A".into()),
                 reading.net_watts,
             );
 
