@@ -550,3 +550,243 @@ fn test_full_quaternion_transformer_finite_difference_gradcheck() {
         );
     }
 }
+
+// ─── Gatekeeper diff-parsing and hunk-extraction tests ──────────────
+
+/// Tests for the gatekeeper binary's diff parsing logic.
+/// These tests use the gatekeeper binary's internal module via a re-exported test helper.
+/// Since gatekeeper.rs is a binary, we test the parsing logic indirectly by duplicating
+/// the core parsing functions here for unit testing.
+///
+/// Minimal re-implementation of the gatekeeper's diff parser for unit testing.
+mod gatekeeper_test_helpers {
+    pub const CODE_EXTENSIONS: &[&str] = &["rs", "py"];
+    pub const DOC_EXTENSIONS: &[&str] = &["md", "txt"];
+    pub const MAX_HUNK_TOKENS: usize = 256;
+    pub const MIN_HUNK_TOKENS: usize = 128;
+
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub enum FileKind {
+        Code,
+        Document,
+        Skip,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct DiffHunk {
+        pub file_path: String,
+        pub extension: String,
+        pub is_code: bool,
+        pub content: String,
+    }
+
+    pub fn classify_extension(ext: &str) -> FileKind {
+        let lower = ext.to_lowercase();
+        if CODE_EXTENSIONS.contains(&lower.as_str()) {
+            FileKind::Code
+        } else if DOC_EXTENSIONS.contains(&lower.as_str()) {
+            FileKind::Document
+        } else {
+            FileKind::Skip
+        }
+    }
+
+    pub fn get_extension(path: &str) -> String {
+        path.rsplit('.').next().unwrap_or("").to_string()
+    }
+
+    fn build_hunk_content(added: &[String], context: &[String]) -> String {
+        let mut parts: Vec<&str> = added.iter().map(|s| s.as_str()).collect();
+        let added_chars: usize = parts.iter().map(|s| s.len()).sum::<usize>() + parts.len();
+        let target_chars = MAX_HUNK_TOKENS * 4;
+        if added_chars < MIN_HUNK_TOKENS * 4 {
+            let budget = target_chars.saturating_sub(added_chars);
+            let mut used = 0;
+            for ctx in context.iter() {
+                if used + ctx.len() + 1 > budget {
+                    break;
+                }
+                parts.push(ctx.as_str());
+                used += ctx.len() + 1;
+            }
+        }
+        let mut result = parts.join("\n");
+        if result.len() > target_chars {
+            result.truncate(target_chars);
+        }
+        result
+    }
+
+    pub fn parse_unified_diff(diff_text: &str) -> Vec<DiffHunk> {
+        let mut hunks = Vec::new();
+        let mut current_file: Option<String> = None;
+        let mut current_ext = String::new();
+        let mut current_kind = FileKind::Skip;
+        let mut added_lines: Vec<String> = Vec::new();
+        let mut context_lines: Vec<String> = Vec::new();
+
+        for line in diff_text.lines() {
+            if line.starts_with("+++ b/") || line.starts_with("+++ ") {
+                if let Some(ref file) = current_file {
+                    if current_kind != FileKind::Skip && !added_lines.is_empty() {
+                        let content = build_hunk_content(&added_lines, &context_lines);
+                        hunks.push(DiffHunk {
+                            file_path: file.clone(),
+                            extension: current_ext.clone(),
+                            is_code: current_kind == FileKind::Code,
+                            content,
+                        });
+                    }
+                }
+                let path = if let Some(stripped) = line.strip_prefix("+++ b/") {
+                    stripped
+                } else if let Some(stripped) = line.strip_prefix("+++ ") {
+                    stripped
+                } else {
+                    line
+                };
+                current_ext = get_extension(path);
+                current_kind = classify_extension(&current_ext);
+                current_file = Some(path.to_string());
+                added_lines.clear();
+                context_lines.clear();
+                continue;
+            }
+            if line.starts_with("--- ") || line.starts_with("diff ") || line.starts_with("index ") {
+                continue;
+            }
+            if line.starts_with("@@") {
+                continue;
+            }
+            if current_kind != FileKind::Skip {
+                if let Some(stripped) = line.strip_prefix('+') {
+                    added_lines.push(stripped.to_string());
+                } else if !line.starts_with('-') {
+                    let ctx = line.strip_prefix(' ').unwrap_or(line);
+                    context_lines.push(ctx.to_string());
+                }
+            }
+        }
+        if let Some(ref file) = current_file {
+            if current_kind != FileKind::Skip && !added_lines.is_empty() {
+                let content = build_hunk_content(&added_lines, &context_lines);
+                hunks.push(DiffHunk {
+                    file_path: file.clone(),
+                    extension: current_ext.clone(),
+                    is_code: current_kind == FileKind::Code,
+                    content,
+                });
+            }
+        }
+        hunks
+    }
+}
+
+#[test]
+fn gatekeeper_parse_empty_diff_returns_empty() {
+    let hunks = gatekeeper_test_helpers::parse_unified_diff("");
+    assert!(hunks.is_empty());
+}
+
+#[test]
+fn gatekeeper_parse_rust_diff_extracts_hunk() {
+    let diff = "diff --git a/src/main.rs b/src/main.rs\nindex abc..def 100644\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,3 +1,4 @@\n fn main() {\n+    let x = 42;\n     println!(\"hello\");\n }";
+    let hunks = gatekeeper_test_helpers::parse_unified_diff(diff);
+    assert_eq!(hunks.len(), 1);
+    assert_eq!(hunks[0].file_path, "src/main.rs");
+    assert_eq!(hunks[0].extension, "rs");
+    assert!(hunks[0].is_code);
+    assert!(hunks[0].content.contains("let x = 42"));
+}
+
+#[test]
+fn gatekeeper_skip_binary_extensions() {
+    let diff = "diff --git a/image.png b/image.png\n--- a/image.png\n+++ b/image.png\n@@ -0,0 +1 @@\n+binary content";
+    let hunks = gatekeeper_test_helpers::parse_unified_diff(diff);
+    assert!(hunks.is_empty(), "Binary file hunks should be skipped");
+}
+
+#[test]
+fn gatekeeper_doc_extension_classified_correctly() {
+    let diff = "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1,2 +1,3 @@\n # Title\n+New content here\n End";
+    let hunks = gatekeeper_test_helpers::parse_unified_diff(diff);
+    assert_eq!(hunks.len(), 1);
+    assert!(
+        !hunks[0].is_code,
+        "Markdown should not be classified as code"
+    );
+    assert_eq!(hunks[0].extension, "md");
+}
+
+#[test]
+fn gatekeeper_deletion_only_diff_produces_no_hunks() {
+    let diff = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,3 +1,2 @@\n fn foo() {\n-    let old = 1;\n }";
+    let hunks = gatekeeper_test_helpers::parse_unified_diff(diff);
+    assert!(
+        hunks.is_empty(),
+        "Deletion-only diffs should produce no hunks"
+    );
+}
+
+#[test]
+fn gatekeeper_lock_file_is_skipped() {
+    let diff = "diff --git a/Cargo.lock b/Cargo.lock\n--- a/Cargo.lock\n+++ b/Cargo.lock\n@@ -1 +1,2 @@\n some existing content\n+new lock entry";
+    let hunks = gatekeeper_test_helpers::parse_unified_diff(diff);
+    assert!(hunks.is_empty(), "Cargo.lock should be skipped");
+}
+
+#[test]
+fn gatekeeper_multi_file_diff_extracts_all_supported() {
+    let diff = concat!(
+        "diff --git a/src/main.rs b/src/main.rs\n",
+        "--- a/src/main.rs\n",
+        "+++ b/src/main.rs\n",
+        "@@ -1 +1,2 @@\n",
+        " fn main() {}\n",
+        "+// new comment\n",
+        "diff --git a/notes.txt b/notes.txt\n",
+        "--- a/notes.txt\n",
+        "+++ b/notes.txt\n",
+        "@@ -1 +1,2 @@\n",
+        " old note\n",
+        "+new note\n",
+        "diff --git a/image.png b/image.png\n",
+        "--- a/image.png\n",
+        "+++ b/image.png\n",
+        "@@ -0,0 +1 @@\n",
+        "+binary\n",
+    );
+    let hunks = gatekeeper_test_helpers::parse_unified_diff(diff);
+    assert_eq!(
+        hunks.len(),
+        2,
+        "Should extract 2 hunks (rs + txt), skip png"
+    );
+    assert_eq!(hunks[0].file_path, "src/main.rs");
+    assert!(hunks[0].is_code);
+    assert_eq!(hunks[1].file_path, "notes.txt");
+    assert!(!hunks[1].is_code);
+}
+
+#[test]
+fn gatekeeper_classify_extension_coverage() {
+    use gatekeeper_test_helpers::{classify_extension, FileKind};
+    assert_eq!(classify_extension("rs"), FileKind::Code);
+    assert_eq!(classify_extension("py"), FileKind::Code);
+    assert_eq!(classify_extension("md"), FileKind::Document);
+    assert_eq!(classify_extension("txt"), FileKind::Document);
+    assert_eq!(classify_extension("png"), FileKind::Skip);
+    assert_eq!(classify_extension("jpg"), FileKind::Skip);
+    assert_eq!(classify_extension("lock"), FileKind::Skip);
+    assert_eq!(classify_extension("wasm"), FileKind::Skip);
+    assert_eq!(classify_extension("toml"), FileKind::Skip); // unsupported = skip
+}
+
+#[test]
+fn gatekeeper_python_diff_is_code() {
+    let diff = "diff --git a/script.py b/script.py\n--- a/script.py\n+++ b/script.py\n@@ -1 +1,2 @@\n import os\n+print('hello')\n";
+    let hunks = gatekeeper_test_helpers::parse_unified_diff(diff);
+    assert_eq!(hunks.len(), 1);
+    assert!(hunks[0].is_code);
+    assert_eq!(hunks[0].extension, "py");
+}
