@@ -196,14 +196,8 @@ impl ProvenanceLedger {
     }
 }
 
-/// Generate current UTC timestamp in ISO 8601 format (e.g., "2026-09-15T13:45:30Z").
-pub fn current_timestamp_utc() -> String {
-    let now = std::time::SystemTime::now();
-    let duration = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let total_secs = duration.as_secs();
-
+/// Break epoch seconds into UTC (year, month, day, hour, min, sec).
+fn epoch_secs_to_utc_parts(total_secs: u64) -> (i64, usize, i64, u64, u64, u64) {
     let sec = total_secs % 60;
     let min = (total_secs / 60) % 60;
     let hour = (total_secs / 3600) % 24;
@@ -245,10 +239,41 @@ pub fn current_timestamp_utc() -> String {
     }
     let day = days + 1;
 
+    (year, month, day, hour, min, sec)
+}
+
+/// Generate current UTC timestamp in ISO 8601 format (e.g., "2026-09-15T13:45:30Z").
+pub fn current_timestamp_utc() -> String {
+    let now = std::time::SystemTime::now();
+    let duration = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let (year, month, day, hour, min, sec) = epoch_secs_to_utc_parts(duration.as_secs());
+
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
         year, month, day, hour, min, sec
     )
+}
+
+/// Format a given epoch seconds into a human-readable compact UTC display string:
+/// `YYYY-MM-DD HH:MM:SS UTC`.
+pub fn format_utc_display(epoch_secs: u64) -> String {
+    let (year, month, day, hour, min, sec) = epoch_secs_to_utc_parts(epoch_secs);
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        year, month, day, hour, min, sec
+    )
+}
+
+/// Generate current UTC timestamp formatted for compact log/stdout display:
+/// `YYYY-MM-DD HH:MM:SS UTC`.
+pub fn current_utc_display() -> String {
+    let now = std::time::SystemTime::now();
+    let duration = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    format_utc_display(duration.as_secs())
 }
 
 /// Get Git commit hash (full 40 characters) via build-time env var or runtime fallback.
@@ -402,5 +427,32 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_file(ledger_path);
+    }
+
+    #[test]
+    fn test_format_utc_display_and_current_utc_display() {
+        // Unix epoch 0: 1970-01-01 00:00:00 UTC
+        assert_eq!(format_utc_display(0), "1970-01-01 00:00:00 UTC");
+
+        // Leap year 2024-02-29 12:34:56 UTC
+        // 2024-02-29 12:34:56 in epoch seconds:
+        // Days from 1970 to 2024: 19724 days (including leap years 72,76,80,84,88,92,96,00,04,08,12,16,20)
+        // 19724 days + 31 (Jan) + 28 (Feb 29 is 29th day, so 28 completed days) = 19783 days
+        // 19783 * 86400 + 12 * 3600 + 34 * 60 + 56 = 1709210096
+        assert_eq!(format_utc_display(1709210096), "2024-02-29 12:34:56 UTC");
+
+        // 2026-09-24 00:45:00 UTC
+        // 2026 is non-leap.
+        // Days: 1970->2026 = 56 years (14 leap years: 72,76,80,84,88,92,96,2000,04,08,12,16,20,24)
+        // 56 * 365 + 14 = 20454 days to 2026-01-01
+        // Month days up to Sept: Jan(31)+Feb(28)+Mar(31)+Apr(30)+May(31)+Jun(30)+Jul(31)+Aug(31) = 243
+        // Day 24 -> 23 days
+        // Total days = 20454 + 243 + 23 = 20720
+        // Secs = 20720 * 86400 + 0 * 3600 + 45 * 60 + 0 = 1790210700
+        assert_eq!(format_utc_display(1790210700), "2026-09-24 00:45:00 UTC");
+
+        let cur = current_utc_display();
+        assert!(cur.ends_with(" UTC"));
+        assert_eq!(cur.len(), 23); // YYYY-MM-DD HH:MM:SS UTC = 4+1+2+1+2 + 1 + 2+1+2+1+2 + 4 = 23
     }
 }

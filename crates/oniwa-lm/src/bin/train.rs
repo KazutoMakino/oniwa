@@ -513,7 +513,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let sname = thermal.sensor_name().unwrap_or("CPU sensor");
         let initial_temp = thermal
             .read_temperature()
-            .map(|t| format!("{:.1} C", t))
+            .map(|t| format!("{:.1} degC", t))
             .unwrap_or_else(|| "N/A".into());
         println!(
             "  - CPU thermal sensor: Detected [{}] (Current temp: {}, dynamic throttling active)",
@@ -909,15 +909,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if is_eval_step {
             let val_loss_val = val_loss_opt.unwrap_or(0.0);
             let bench = benchmark_opt.as_ref().unwrap();
+            let timestamp_prefix = format!("[{}]", oniwa_lm::logger::current_utc_display());
             println!(
-                "Step {:3}/{} | Train Loss: {:.4} | Val Loss: {:.4} | LR: {:.5} | Temp: {} | Net Power: {:.1}W (Gross: {:.1}W) | Net Energy: {:.4}Wh",
+                "{} Step {:3}/{} | Train Loss: {:.4} | Val Loss: {:.4} | LR: {:.5} | Temp: {} | Net Power: {:.1}W (Gross: {:.1}W) | Net Energy: {:.4}Wh",
+                timestamp_prefix,
                 step,
                 if infinite_mode { "∞".into() } else { target_steps.to_string() },
                 loss,
                 val_loss_val,
                 lr,
                 cpu_temp
-                    .map(|t| format!("{:.1} C", t))
+                    .map(|t| format!("{:.1} degC", t))
                     .unwrap_or_else(|| "N/A".into()),
                 reading.net_watts,
                 reading.gross_watts,
@@ -979,7 +981,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 use std::io::Write;
                 let md_text = md_lines.join("<br>");
                 let temp_str = cpu_temp
-                    .map(|t| format!("{:.1} C", t))
+                    .map(|t| format!("{:.1} degC", t))
                     .unwrap_or_else(|| "-".into());
                 writeln!(
                     journal_md,
