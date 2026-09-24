@@ -62,6 +62,18 @@ cargo run --release -p oniwa-decide --bin train -- --steps 300 --config quaterni
 cargo run --release -p oniwa-decide --bin train -- --add-steps 100
 ```
 
+### 3. Lossy Compression Evaluation Benchmark (`compress-eval`)
+```bash
+# Evaluate irreversible information compression vs autoregressive LLM
+cargo run --release -p oniwa-decide --bin compress-eval
+```
+
+### 4. Git Gatekeeper CLI (`gatekeeper`)
+```bash
+# Scan git diff and block anomalous code
+git diff --cached | cargo run --release -p oniwa-decide --bin gatekeeper -- --stdin
+```
+
 ---
 
 ## Specifications & Roadmap References

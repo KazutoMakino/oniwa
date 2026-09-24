@@ -54,3 +54,12 @@ To expand sequence information density and overcome character-level context limi
 # Train and save a 4,096-token BPE vocabulary from the combined corpus
 cargo run --release -p oniwa-pipeline --bin train-bpe -- --input data/corpus_combined.txt --vocab-size 4096 --output data/bpe_vocab.json
 ```
+
+### 3. Killer Pattern Contrastive Mutation Generator (`gen-killer-patterns`)
+
+Synthesize clean vs. mutated 1:1 contrastive pairs across Rust, Python, Legal/Tech docs, and Literature to train the System 1 anomaly detection head (`Noul`) and complexity score head:
+
+```bash
+# Generate 5,000 contrastive pairs (10,000 samples)
+cargo run --release -p oniwa-pipeline --bin gen-killer-patterns -- --pairs 5000 --output data/killer_patterns.jsonl
+```

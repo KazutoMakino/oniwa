@@ -113,7 +113,7 @@ enum FileKind {
 }
 
 /// Extract file extension from a path
-fn get_extension(path: &str) -> String {
+fn extract_extension(path: &str) -> String {
     path.rsplit('.').next().unwrap_or("").to_string()
 }
 
@@ -153,7 +153,7 @@ fn parse_unified_diff(diff_text: &str) -> Vec<DiffHunk> {
             } else {
                 line
             };
-            current_ext = get_extension(path);
+            current_ext = extract_extension(path);
             current_kind = classify_extension(&current_ext);
             current_file = Some(path.to_string());
             added_lines.clear();
