@@ -62,6 +62,18 @@ cargo run --release -p oniwa-decide --bin train -- --steps 300 --config quaterni
 cargo run --release -p oniwa-decide --bin train -- --add-steps 100
 ```
 
+### 3. 非可逆情報圧縮評価ベンチマーク (`compress-eval`)
+```bash
+# 自己回帰LLMとの不可逆情報圧縮性能・レイテンシ比較
+cargo run --release -p oniwa-decide --bin compress-eval
+```
+
+### 4. Git Gatekeeper CLI (`gatekeeper`)
+```bash
+# git diff をスキャンし、破壊的・異常コードを遮断
+git diff --cached | cargo run --release -p oniwa-decide --bin gatekeeper -- --stdin
+```
+
 ---
 
 ## 仕様書・ロードマップ参照

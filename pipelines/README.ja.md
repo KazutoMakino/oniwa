@@ -53,3 +53,12 @@ cargo run --release -p oniwa-pipeline -- --status
 # 統合コーパスから 4,096 語彙の BPE 語彙ファイルを生成
 cargo run --release -p oniwa-pipeline --bin train-bpe -- --input data/corpus_combined.txt --vocab-size 4096 --output data/bpe_vocab.json
 ```
+
+### 3. キラーパターン対照変異生成器 (`gen-killer-patterns`)
+
+Rust、Python、技術/法務文書、文学コーパスから、正常スライスと変異破壊スライスの1:1対照ペアを自動合成し、System 1 の異常検知ヘッド（`Noul`）および複雑度スコアヘッドの学習データを生成します：
+
+```bash
+# 5,000 ペア（計 10,000 件）の対照データセットを合成
+cargo run --release -p oniwa-pipeline --bin gen-killer-patterns -- --pairs 5000 --output data/killer_patterns.jsonl
+```

@@ -628,7 +628,7 @@ mod gatekeeper_test_helpers {
         }
     }
 
-    pub fn get_extension(path: &str) -> String {
+    pub fn extract_extension(path: &str) -> String {
         path.rsplit('.').next().unwrap_or("").to_string()
     }
 
@@ -682,7 +682,7 @@ mod gatekeeper_test_helpers {
                 } else {
                     line
                 };
-                current_ext = get_extension(path);
+                current_ext = extract_extension(path);
                 current_kind = classify_extension(&current_ext);
                 current_file = Some(path.to_string());
                 added_lines.clear();

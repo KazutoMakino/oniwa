@@ -1,4 +1,4 @@
-//! # Lossy Compression Evaluation Benchmark (`compress_eval`)
+//! # Lossy Compression Evaluation Benchmark (`compress-eval`)
 //!
 //! Empirically verifies Hypothesis H3 (Lossy Compression) from the System One design doc:
 //! "Decisions are irreversible information compression, hence ultra-fast."
@@ -388,7 +388,7 @@ fn write_markdown_report(
         ));
     }
 
-    md.push_str("---\n\n*Reproduce this benchmark locally: `cargo run --release -p oniwa-decide --bin compress_eval`*\n");
+    md.push_str("---\n\n*Reproduce this benchmark locally: `cargo run --release -p oniwa-decide --bin compress-eval`*\n");
 
     fs::write(path, md)?;
     Ok(())
