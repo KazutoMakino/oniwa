@@ -7,7 +7,7 @@ use oniwa_decide::memory::FlatMemoryLayout;
 use oniwa_decide::mlm::apply_mlm_mask;
 use oniwa_decide::model::{DecisionConfig, DecisionModel};
 use oniwa_lm::reproducibility::DeterministicRng;
-use oniwa_lm::tokenizer::CharTokenizer;
+use oniwa_lm::tokenizer::{CharTokenizer, Tokenizer};
 use std::io::Cursor;
 
 #[test]
@@ -64,6 +64,43 @@ fn killer_pattern_jsonl_writes_encoded_tokens_to_supplied_slice() {
     assert!(!labels.noul);
     assert_eq!(labels.score, 0.75);
     assert_eq!(labels.mask_indices, &[1]);
+}
+
+#[test]
+fn test_generated_killer_patterns_jsonl_roundtrip() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root_dir = manifest_dir.parent().unwrap().parent().unwrap();
+    let file_path = root_dir.join("data/killer_patterns.jsonl");
+
+    // If file exists from gen-killer-patterns run, test full dataset load and batch write
+    if file_path.exists() {
+        let file = std::fs::File::open(&file_path).unwrap();
+        let dataset = KillerPatternDataset::from_jsonl_reader(file).unwrap();
+        assert!(dataset.len() >= 100);
+
+        // Load CharTokenizer from vocab.json or fallback
+        let vocab_path = root_dir.join("data/vocab.json");
+        let tokenizer: Box<dyn Tokenizer> = if vocab_path.exists() {
+            Box::new(CharTokenizer::load_vocab(&vocab_path).unwrap())
+        } else {
+            Box::new(CharTokenizer::build_from_text(
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 \n\t{}()[]<>;:=+-*/!?,.&|#_\"'~`@$%\r\
+                 第一条個人の権利利益メロス激怒した",
+            ))
+        };
+        let mut destination = vec![0u16; 256];
+
+        for i in 0..50.min(dataset.len()) {
+            let labels = dataset
+                .write_batch(&*tokenizer, i, &mut destination)
+                .unwrap();
+            assert!(labels.choice < 4);
+            assert!(labels.score >= 0.0 && labels.score <= 1.0);
+            for &idx in labels.mask_indices {
+                assert!(idx < destination.len());
+            }
+        }
+    }
 }
 
 #[test]
