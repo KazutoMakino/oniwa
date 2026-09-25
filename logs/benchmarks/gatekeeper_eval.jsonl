@@ -1,0 +1,3 @@
+{"file":"src/example.rs","extension":"rs","is_code":true,"noul":false,"noul_confidence":0.71025455,"score":1.7451816,"score_confidence":0.87451816,"choice_idx":2,"choice_confidence":0.48645923,"inference_time_ms":671,"entropy_bits":1.5759461,"verdict":"PASS"}
+{"file":"src/corrupted.rs","extension":"rs","is_code":true,"noul":false,"noul_confidence":0.6489153,"score":1.6060032,"score_confidence":0.8606003,"choice_idx":2,"choice_confidence":0.5929546,"inference_time_ms":633,"entropy_bits":1.4673821,"verdict":"PASS"}
+{"file":"src/corrupted.rs","extension":"rs","is_code":true,"noul":false,"noul_confidence":0.021376729,"score":3.8437958,"score_confidence":0.91562045,"choice_idx":2,"choice_confidence":0.8087151,"inference_time_ms":710,"entropy_bits":0.8531704,"verdict":"PASS"}

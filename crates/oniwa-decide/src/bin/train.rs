@@ -118,30 +118,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let corpus_dir = data_dir.join("corpus");
     let base_dir = workspace_root.join("crates/oniwa-decide");
 
-    // Checkpoint directories: use custom dir or fallback based on config_mode
-    let (checkpoint_dir, best_checkpoint_dir) = if let Some(ref dir) = custom_checkpoint_dir {
-        (dir.join("latest"), dir.join("best"))
-    } else {
-        match config_mode.as_str() {
-            "full_quaternion" => (
-                base_dir.join("checkpoints/full_quaternion/latest"),
-                base_dir.join("checkpoints/full_quaternion/best"),
-            ),
-            "quaternion_head" => (
-                base_dir.join("checkpoints/quaternion_head/latest"),
-                base_dir.join("checkpoints/quaternion_head/best"),
-            ),
-            "iso_parameter" => (
-                base_dir.join("checkpoints/iso_parameter/latest"),
-                base_dir.join("checkpoints/iso_parameter/best"),
-            ),
-            _ => (
-                base_dir.join("checkpoints/standard_baseline/latest"),
-                base_dir.join("checkpoints/standard_baseline/best"),
-            ),
-        }
-    };
-
     // Initialize tokenizer and dataset generator
     let vocab_path = data_dir.join("vocab.json");
     let using_bpe = bpe_path.is_some();
@@ -166,10 +142,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("--data requires a 4,096-token BPE vocabulary supplied by --bpe".into());
     }
 
+    // Checkpoint directories: use custom dir or fallback based on config_mode
+    let (checkpoint_dir, best_checkpoint_dir) = if let Some(ref dir) = custom_checkpoint_dir {
+        (dir.join("latest"), dir.join("best"))
+    } else {
+        match config_mode.as_str() {
+            "full_quaternion" => (
+                base_dir.join("checkpoints/full_quaternion/latest"),
+                base_dir.join("checkpoints/full_quaternion/best"),
+            ),
+            "quaternion_head" => (
+                base_dir.join("checkpoints/quaternion_head/latest"),
+                base_dir.join("checkpoints/quaternion_head/best"),
+            ),
+            "iso_parameter" => (
+                base_dir.join("checkpoints/iso_parameter/latest"),
+                base_dir.join("checkpoints/iso_parameter/best"),
+            ),
+            "system1_mlm" => (
+                base_dir.join("checkpoints/system1_mlm/latest"),
+                base_dir.join("checkpoints/system1_mlm/best"),
+            ),
+            _ if killer_patterns.is_some() => (
+                base_dir.join("checkpoints/system1_mlm/latest"),
+                base_dir.join("checkpoints/system1_mlm/best"),
+            ),
+            _ => (
+                base_dir.join("checkpoints/standard_baseline/latest"),
+                base_dir.join("checkpoints/standard_baseline/best"),
+            ),
+        }
+    };
+
     let config = match config_mode.as_str() {
         "full_quaternion" => DecisionConfig::full_quaternion_transformer(tokenizer.vocab_size()),
         "quaternion_head" => DecisionConfig::quaternion_head(tokenizer.vocab_size()),
         "iso_parameter" => DecisionConfig::iso_parameter(tokenizer.vocab_size()),
+        "system1_mlm" => DecisionConfig::system1_mlm(),
         _ if killer_patterns.is_some() => DecisionConfig::system1_mlm(),
         _ => {
             if quaternion_head_mode {
@@ -301,9 +310,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut scores = Vec::with_capacity(batch_size);
                 let mut mask_indices = Vec::new();
                 for bi in 0..batch_size {
+                    let sample_idx = ((step - 1) * batch_size + bi) % patterns.len();
                     let labels = patterns.write_batch(
                         &*tokenizer,
-                        bi % patterns.len(),
+                        sample_idx,
                         &mut tokens[bi * config.seq_len..(bi + 1) * config.seq_len],
                     )?;
                     choices.push(labels.choice);
