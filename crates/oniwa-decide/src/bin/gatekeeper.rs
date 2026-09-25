@@ -12,7 +12,7 @@
 
 use oniwa_decide::{DecisionConfig, DecisionEngine, DecisionModel};
 use oniwa_lm::reproducibility::DeterministicRng;
-use oniwa_lm::tokenizer::CharTokenizer;
+use oniwa_lm::tokenizer::{BpeTokenizer, CharTokenizer, Tokenizer};
 use serde::Serialize;
 use std::env;
 use std::fs;
@@ -300,12 +300,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Step 3: Load DecisionEngine ──────────────────────────────────
     let workspace_root = oniwa_lm::find_workspace_root();
     let data_dir = workspace_root.join("data");
-    let vocab_path = data_dir.join("vocab.json");
-    let tokenizer = if vocab_path.exists() {
-        CharTokenizer::load_vocab(&vocab_path)?
-    } else {
-        CharTokenizer::build_from_text("abcdefghijklmnopqrstuvwxyz 0123456789")
-    };
 
     let base_dir = if workspace_root
         .join("crates/oniwa-decide/checkpoints")
@@ -320,6 +314,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         PathBuf::from(ckpt)
     } else {
         let possible = [
+            base_dir.join("checkpoints/system1_mlm/best"),
+            base_dir.join("checkpoints/full_quaternion/best"),
             base_dir.join("checkpoints/quaternion_head/best"),
             base_dir.join("checkpoints/best"),
             base_dir.join("checkpoints/standard_baseline/best"),
@@ -333,11 +329,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let engine = if checkpoint_dir.join("meta.json").exists() {
         println!("  💾 Loaded checkpoint: {:?}", checkpoint_dir);
-        DecisionEngine::load_from_dir(&checkpoint_dir, tokenizer)?
+        let meta_str = std::fs::read_to_string(checkpoint_dir.join("meta.json"))?;
+        let meta: serde_json::Value = serde_json::from_str(&meta_str)?;
+        let vocab_size = meta["config"]["vocab_size"].as_u64().unwrap_or(0) as usize;
+
+        let tokenizer: Box<dyn Tokenizer> = if vocab_size == 4096 {
+            let bpe_path = data_dir.join("bpe_vocab.json");
+            if bpe_path.exists() {
+                Box::new(BpeTokenizer::load_vocab(&bpe_path)?)
+            } else {
+                return Err("Checkpoint requires data/bpe_vocab.json (vocab_size 4096)".into());
+            }
+        } else {
+            let vocab_path = data_dir.join("vocab.json");
+            if vocab_path.exists() {
+                Box::new(CharTokenizer::load_vocab(&vocab_path)?)
+            } else {
+                Box::new(CharTokenizer::build_from_text(
+                    "abcdefghijklmnopqrstuvwxyz 0123456789",
+                ))
+            }
+        };
+
+        DecisionEngine::load_from_dir_with_tokenizer(&checkpoint_dir, tokenizer)?
     } else {
         println!(
             "  ⚠️  No checkpoint detected: running with randomly initialized model (untrained)"
         );
+        let vocab_path = data_dir.join("vocab.json");
+        let tokenizer = if vocab_path.exists() {
+            CharTokenizer::load_vocab(&vocab_path)?
+        } else {
+            CharTokenizer::build_from_text("abcdefghijklmnopqrstuvwxyz 0123456789")
+        };
         let config = DecisionConfig {
             vocab_size: tokenizer.vocab_size(),
             ..Default::default()

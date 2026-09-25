@@ -66,11 +66,27 @@ pub struct AuditDecision {
 pub struct DecisionEngine {
     pub model: DecisionModel,
     pub tokenizer: CharTokenizer,
+    pub custom_tokenizer: Option<Box<dyn oniwa_lm::tokenizer::Tokenizer>>,
 }
 
 impl DecisionEngine {
     pub fn new(model: DecisionModel, tokenizer: CharTokenizer) -> Self {
-        Self { model, tokenizer }
+        Self {
+            model,
+            tokenizer,
+            custom_tokenizer: None,
+        }
+    }
+
+    pub fn new_with_tokenizer(
+        model: DecisionModel,
+        tokenizer: Box<dyn oniwa_lm::tokenizer::Tokenizer>,
+    ) -> Self {
+        Self {
+            model,
+            tokenizer: CharTokenizer::build_from_text(""),
+            custom_tokenizer: Some(tokenizer),
+        }
     }
 
     /// Load model and configuration from a checkpoint directory
@@ -86,13 +102,41 @@ impl DecisionEngine {
         let mut model = DecisionModel::new(config, &mut rng);
         model.load_checkpoint(checkpoint_dir.as_ref())?;
 
-        Ok(Self { model, tokenizer })
+        Ok(Self {
+            model,
+            tokenizer,
+            custom_tokenizer: None,
+        })
+    }
+
+    /// Load model and configuration from a checkpoint directory with an arbitrary Tokenizer
+    pub fn load_from_dir_with_tokenizer<P: AsRef<Path>>(
+        checkpoint_dir: P,
+        tokenizer: Box<dyn oniwa_lm::tokenizer::Tokenizer>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let meta_str = std::fs::read_to_string(checkpoint_dir.as_ref().join("meta.json"))?;
+        let meta: serde_json::Value = serde_json::from_str(&meta_str)?;
+        let config: DecisionConfig = serde_json::from_value(meta["config"].clone())?;
+
+        let mut rng = oniwa_lm::reproducibility::DeterministicRng::new(0);
+        let mut model = DecisionModel::new(config, &mut rng);
+        model.load_checkpoint(checkpoint_dir.as_ref())?;
+
+        Ok(Self {
+            model,
+            tokenizer: CharTokenizer::build_from_text(""),
+            custom_tokenizer: Some(tokenizer),
+        })
     }
 
     /// Run type-safe audit inference on text in a single forward pass
     pub fn audit_text(&self, text: &str) -> AuditDecision {
         let start = std::time::Instant::now();
-        let tokens = self.tokenizer.encode(text);
+        let tokens = if let Some(ref tok) = self.custom_tokenizer {
+            tok.encode(text)
+        } else {
+            self.tokenizer.encode(text)
+        };
         let raw = self.model.decide(&tokens);
         let elapsed = start.elapsed().as_millis();
 

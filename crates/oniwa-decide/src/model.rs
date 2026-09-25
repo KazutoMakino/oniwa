@@ -1108,8 +1108,15 @@ impl DecisionModel {
         let noul_conf = (noul_p - 0.5).abs() * 2.0;
 
         // Compute Score
-        let score_val = cache.score_preds[0].clamp(1.0, 5.0);
-        let score_conf = 1.0 - ((score_val - 3.0).abs() / 2.0) * 0.2; // Stability confidence
+        let (score_val, score_conf) = if self.config.score_unit_interval {
+            let val = cache.score_preds[0].clamp(0.0, 1.0);
+            let conf = 1.0 - (val - 0.5).abs() * 0.4;
+            (val, conf)
+        } else {
+            let val = cache.score_preds[0].clamp(1.0, 5.0);
+            let conf = 1.0 - ((val - 3.0).abs() / 2.0) * 0.2; // Stability confidence
+            (val, conf)
+        };
 
         RawDecision {
             choice_probs,
