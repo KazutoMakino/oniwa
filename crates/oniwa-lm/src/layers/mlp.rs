@@ -8,9 +8,9 @@
 //!
 //! where Swish(g) = g * sigmoid(g) = g / (1 + exp(-g))
 
-pub struct SwiGLU;
+pub struct SwiGlu;
 
-impl SwiGLU {
+impl SwiGlu {
     #[inline(always)]
     fn silu(x: f32) -> f32 {
         x / (1.0 + (-x).exp())
@@ -41,36 +41,36 @@ impl SwiGLU {
         w_gate_up: &[f32],
         w_down: &[f32],
         n: usize,
-        c: usize,
-        ffn: usize,
+        dim: usize,
+        ffn_dim: usize,
     ) {
         // 1. Calculate G and U: inp [N, C] * w_gate_up [C, 2*FFN]
         for i in 0..n {
-            let x_row = &inp[i * c..(i + 1) * c];
-            for j in 0..ffn {
+            let x_row = &inp[i * dim..(i + 1) * dim];
+            for j in 0..ffn_dim {
                 let mut dot_g = 0.0f32;
                 let mut dot_u = 0.0f32;
                 for (k, &x_k) in x_row.iter().enumerate() {
-                    let w_offset = k * (2 * ffn);
+                    let w_offset = k * (2 * ffn_dim);
                     dot_g += x_k * w_gate_up[w_offset + j];
-                    dot_u += x_k * w_gate_up[w_offset + ffn + j];
+                    dot_u += x_k * w_gate_up[w_offset + ffn_dim + j];
                 }
-                act_g[i * ffn + j] = dot_g;
-                act_u[i * ffn + j] = dot_u;
+                act_g[i * ffn_dim + j] = dot_g;
+                act_u[i * ffn_dim + j] = dot_u;
                 let h = Self::silu(dot_g) * dot_u;
-                act_h[i * ffn + j] = h;
+                act_h[i * ffn_dim + j] = h;
             }
         }
 
         // 2. Calculate Y: H [N, FFN] * w_down [FFN, C]
         for i in 0..n {
-            let h_row = &act_h[i * ffn..(i + 1) * ffn];
-            for j in 0..c {
+            let h_row = &act_h[i * ffn_dim..(i + 1) * ffn_dim];
+            for j in 0..dim {
                 let mut dot_y = 0.0f32;
-                for k in 0..ffn {
-                    dot_y += h_row[k] * w_down[k * c + j];
+                for k in 0..ffn_dim {
+                    dot_y += h_row[k] * w_down[k * dim + j];
                 }
-                out[i * c + j] = dot_y;
+                out[i * dim + j] = dot_y;
             }
         }
     }
@@ -89,29 +89,29 @@ impl SwiGLU {
         w_gate_up: &[f32],
         w_down: &[f32],
         n: usize,
-        c: usize,
-        ffn: usize,
+        dim: usize,
+        ffn_dim: usize,
     ) {
-        let mut dh = vec![0.0f32; n * ffn];
-        let mut dg = vec![0.0f32; n * ffn];
-        let mut du = vec![0.0f32; n * ffn];
+        let mut dh = vec![0.0f32; n * ffn_dim];
+        let mut dg = vec![0.0f32; n * ffn_dim];
+        let mut du = vec![0.0f32; n * ffn_dim];
 
         // 1. dH = dout * w_down^T,  dw_down += act_h^T * dout
         for i in 0..n {
-            let dout_row = &dout[i * c..(i + 1) * c];
-            let h_row = &act_h[i * ffn..(i + 1) * ffn];
-            for k in 0..ffn {
+            let dout_row = &dout[i * dim..(i + 1) * dim];
+            let h_row = &act_h[i * ffn_dim..(i + 1) * ffn_dim];
+            for k in 0..ffn_dim {
                 let mut dot_dh = 0.0f32;
-                for j in 0..c {
-                    dot_dh += dout_row[j] * w_down[k * c + j];
-                    dw_down[k * c + j] += h_row[k] * dout_row[j];
+                for j in 0..dim {
+                    dot_dh += dout_row[j] * w_down[k * dim + j];
+                    dw_down[k * dim + j] += h_row[k] * dout_row[j];
                 }
-                dh[i * ffn + k] = dot_dh;
+                dh[i * ffn_dim + k] = dot_dh;
             }
         }
 
         // 2. dU = dH * Swish(G),  dG = dH * U * Swish'(G)
-        for idx in 0..n * ffn {
+        for idx in 0..n * ffn_dim {
             let g = act_g[idx];
             let u = act_u[idx];
             let dh_val = dh[idx];
@@ -126,20 +126,20 @@ impl SwiGLU {
         // 3. dinp += dG * W_gate^T + dU * W_up^T
         //    dw_gate_up += inp^T * [dG, dU]
         for i in 0..n {
-            let x_row = &inp[i * c..(i + 1) * c];
-            let dinp_row = &mut dinp[i * c..(i + 1) * c];
-            let dg_row = &dg[i * ffn..(i + 1) * ffn];
-            let du_row = &du[i * ffn..(i + 1) * ffn];
+            let x_row = &inp[i * dim..(i + 1) * dim];
+            let dinp_row = &mut dinp[i * dim..(i + 1) * dim];
+            let dg_row = &dg[i * ffn_dim..(i + 1) * ffn_dim];
+            let du_row = &du[i * ffn_dim..(i + 1) * ffn_dim];
 
-            for k in 0..c {
+            for k in 0..dim {
                 let mut dx_k = 0.0f32;
-                let w_offset = k * (2 * ffn);
-                for j in 0..ffn {
+                let w_offset = k * (2 * ffn_dim);
+                for j in 0..ffn_dim {
                     dx_k += dg_row[j] * w_gate_up[w_offset + j];
-                    dx_k += du_row[j] * w_gate_up[w_offset + ffn + j];
+                    dx_k += du_row[j] * w_gate_up[w_offset + ffn_dim + j];
 
                     dw_gate_up[w_offset + j] += x_row[k] * dg_row[j];
-                    dw_gate_up[w_offset + ffn + j] += x_row[k] * du_row[j];
+                    dw_gate_up[w_offset + ffn_dim + j] += x_row[k] * du_row[j];
                 }
                 dinp_row[k] += dx_k;
             }
@@ -168,7 +168,7 @@ mod tests {
         let mut act_u = vec![0.0f32; n * ffn];
         let mut act_h = vec![0.0f32; n * ffn];
 
-        SwiGLU::forward(
+        SwiGlu::forward(
             &mut out, &mut act_g, &mut act_u, &mut act_h, &inp, &w_gate_up, &w_down, n, c, ffn,
         );
 
@@ -178,7 +178,7 @@ mod tests {
         let mut dw_gate_up = vec![0.0f32; c * 2 * ffn];
         let mut dw_down = vec![0.0f32; ffn * c];
 
-        SwiGLU::backward(
+        SwiGlu::backward(
             &mut dinp,
             &mut dw_gate_up,
             &mut dw_down,
@@ -208,7 +208,7 @@ mod tests {
             let mut dummy_u = vec![0.0f32; n * ffn];
             let mut dummy_h = vec![0.0f32; n * ffn];
 
-            SwiGLU::forward(
+            SwiGlu::forward(
                 &mut out_pos,
                 &mut dummy_g,
                 &mut dummy_u,
@@ -220,7 +220,7 @@ mod tests {
                 c,
                 ffn,
             );
-            SwiGLU::forward(
+            SwiGlu::forward(
                 &mut out_neg,
                 &mut dummy_g,
                 &mut dummy_u,

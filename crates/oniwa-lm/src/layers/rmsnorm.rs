@@ -9,9 +9,9 @@
 //!   dweight = sum( dout * x_hat )
 //!   dx = (1 / RMS(x)) * [ weight * dout - (x_hat / d) * sum(dout * weight * x_hat) ]
 
-pub struct RMSNorm;
+pub struct RmsNorm;
 
-impl RMSNorm {
+impl RmsNorm {
     /// Forward pass
     ///
     /// - `out`: Output buffer [N, D]
@@ -25,17 +25,17 @@ impl RMSNorm {
         inp: &[f32],
         weight: &[f32],
         eps: f32,
-        d: usize,
+        dim: usize,
     ) {
-        let n = inp.len() / d;
+        let n = inp.len() / dim;
         assert_eq!(out.len(), inp.len());
         assert_eq!(rstd.len(), n);
-        assert_eq!(weight.len(), d);
+        assert_eq!(weight.len(), dim);
 
         for (row, r_out) in rstd.iter_mut().enumerate().take(n) {
-            let offset = row * d;
-            let inp_row = &inp[offset..offset + d];
-            let out_row = &mut out[offset..offset + d];
+            let offset = row * dim;
+            let inp_row = &inp[offset..offset + dim];
+            let out_row = &mut out[offset..offset + dim];
 
             // 1. Sum of squares
             let mut sum_sq = 0.0f32;
@@ -44,12 +44,12 @@ impl RMSNorm {
             }
 
             // 2. Reciprocal of RMS (rstd = 1 / sqrt(mean + eps))
-            let mean_sq = sum_sq / (d as f32);
+            let mean_sq = sum_sq / (dim as f32);
             let r = 1.0f32 / (mean_sq + eps).sqrt();
             *r_out = r;
 
             // 3. Normalize and scale: out = (x * r) * weight
-            for i in 0..d {
+            for i in 0..dim {
                 out_row[i] = inp_row[i] * r * weight[i];
             }
         }
@@ -70,24 +70,24 @@ impl RMSNorm {
         inp: &[f32],
         rstd: &[f32],
         weight: &[f32],
-        d: usize,
+        dim: usize,
     ) {
-        let n = inp.len() / d;
+        let n = inp.len() / dim;
         assert_eq!(dinp.len(), inp.len());
         assert_eq!(dout.len(), inp.len());
         assert_eq!(rstd.len(), n);
-        assert_eq!(dweight.len(), d);
-        assert_eq!(weight.len(), d);
+        assert_eq!(dweight.len(), dim);
+        assert_eq!(weight.len(), dim);
 
         for (row, &r) in rstd.iter().enumerate().take(n) {
-            let offset = row * d;
-            let inp_row = &inp[offset..offset + d];
-            let dout_row = &dout[offset..offset + d];
-            let dinp_row = &mut dinp[offset..offset + d];
+            let offset = row * dim;
+            let inp_row = &inp[offset..offset + dim];
+            let dout_row = &dout[offset..offset + dim];
+            let dinp_row = &mut dinp[offset..offset + dim];
 
             // Inner product S = sum( dout * weight * x_hat )
             let mut s = 0.0f32;
-            for i in 0..d {
+            for i in 0..dim {
                 let x_hat = inp_row[i] * r;
                 s += dout_row[i] * weight[i] * x_hat;
                 // Accumulate weight gradient
@@ -95,8 +95,8 @@ impl RMSNorm {
             }
 
             // Input gradient dx = r * [ weight * dout - (x_hat / d) * S ]
-            let factor = s / (d as f32);
-            for i in 0..d {
+            let factor = s / (dim as f32);
+            for i in 0..dim {
                 let x_hat = inp_row[i] * r;
                 dinp_row[i] += r * (weight[i] * dout_row[i] - x_hat * factor);
             }
@@ -121,11 +121,11 @@ mod tests {
 
         let mut out = vec![0.0; n * d];
         let mut rstd = vec![0.0; n];
-        RMSNorm::forward(&mut out, &mut rstd, &inp, &weight, eps, d);
+        RmsNorm::forward(&mut out, &mut rstd, &inp, &weight, eps, d);
 
         let mut dinp = vec![0.0; n * d];
         let mut dweight = vec![0.0; d];
-        RMSNorm::backward(&mut dinp, &mut dweight, &dout, &inp, &rstd, &weight, d);
+        RmsNorm::backward(&mut dinp, &mut dweight, &dout, &inp, &rstd, &weight, d);
 
         // Objective: L = sum(out * dout)
         let delta = 1e-3f32;
@@ -139,10 +139,10 @@ mod tests {
 
             let mut out_plus = vec![0.0; n * d];
             let mut rstd_dummy = vec![0.0; n];
-            RMSNorm::forward(&mut out_plus, &mut rstd_dummy, &inp_plus, &weight, eps, d);
+            RmsNorm::forward(&mut out_plus, &mut rstd_dummy, &inp_plus, &weight, eps, d);
 
             let mut out_minus = vec![0.0; n * d];
-            RMSNorm::forward(&mut out_minus, &mut rstd_dummy, &inp_minus, &weight, eps, d);
+            RmsNorm::forward(&mut out_minus, &mut rstd_dummy, &inp_minus, &weight, eps, d);
 
             let l_plus: f32 = out_plus.iter().zip(&dout).map(|(a, b)| a * b).sum();
             let l_minus: f32 = out_minus.iter().zip(&dout).map(|(a, b)| a * b).sum();
@@ -167,10 +167,10 @@ mod tests {
 
             let mut out_plus = vec![0.0; n * d];
             let mut rstd_dummy = vec![0.0; n];
-            RMSNorm::forward(&mut out_plus, &mut rstd_dummy, &inp, &w_plus, eps, d);
+            RmsNorm::forward(&mut out_plus, &mut rstd_dummy, &inp, &w_plus, eps, d);
 
             let mut out_minus = vec![0.0; n * d];
-            RMSNorm::forward(&mut out_minus, &mut rstd_dummy, &inp, &w_minus, eps, d);
+            RmsNorm::forward(&mut out_minus, &mut rstd_dummy, &inp, &w_minus, eps, d);
 
             let l_plus: f32 = out_plus.iter().zip(&dout).map(|(a, b)| a * b).sum();
             let l_minus: f32 = out_minus.iter().zip(&dout).map(|(a, b)| a * b).sum();

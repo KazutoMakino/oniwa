@@ -22,22 +22,29 @@ pub struct QuaternionLMHead;
 impl QuaternionLMHead {
     /// Forward pass of Quaternion LM Head
     ///
-    /// - `logits`: Output logits `[n, v]`
-    /// - `h`: Final normalized hidden states `[n, d]` (interpreted as `[n, d/4]` quaternions)
-    /// - `weight`: Vocabulary embedding matrix $E$ `[v, d]` (interpreted as `[v, d/4]` quaternions)
-    /// - `n`: Number of tokens ($B \times T$)
-    /// - `d`: Hidden dimension (must be divisible by 4)
-    /// - `v`: Vocabulary size
-    pub fn forward(logits: &mut [f32], h: &[f32], weight: &[f32], n: usize, d: usize, v: usize) {
-        assert_eq!(d % 4, 0, "Hidden dimension d must be a multiple of 4");
-        let n_quat = d / 4;
+    /// - `logits`: Output logits `[num_tokens, vocab_size]`
+    /// - `h`: Final normalized hidden states `[num_tokens, dim]` (interpreted as `[num_tokens, dim/4]` quaternions)
+    /// - `weight`: Vocabulary embedding matrix $E$ `[vocab_size, dim]` (interpreted as `[vocab_size, dim/4]` quaternions)
+    /// - `num_tokens`: Number of tokens ($B \times T$)
+    /// - `dim`: Hidden dimension (must be divisible by 4)
+    /// - `vocab_size`: Vocabulary size
+    pub fn forward(
+        logits: &mut [f32],
+        h: &[f32],
+        weight: &[f32],
+        num_tokens: usize,
+        dim: usize,
+        vocab_size: usize,
+    ) {
+        assert_eq!(dim % 4, 0, "Hidden dimension dim must be a multiple of 4");
+        let n_quat = dim / 4;
 
-        for i in 0..n {
-            let h_row = &h[i * d..(i + 1) * d];
-            let logits_row = &mut logits[i * v..(i + 1) * v];
+        for i in 0..num_tokens {
+            let h_row = &h[i * dim..(i + 1) * dim];
+            let logits_row = &mut logits[i * vocab_size..(i + 1) * vocab_size];
 
-            for j in 0..v {
-                let w_row = &weight[j * d..(j + 1) * d];
+            for j in 0..vocab_size {
+                let w_row = &weight[j * dim..(j + 1) * dim];
                 let mut logit_val = 0.0f32;
 
                 for k in 0..n_quat {
@@ -53,14 +60,14 @@ impl QuaternionLMHead {
 
     /// Backward pass of Quaternion LM Head
     ///
-    /// - `dh`: Gradient w.r.t input hidden state `[n, d]` (accumulated)
-    /// - `dw`: Gradient w.r.t vocabulary embedding matrix `[v, d]` (accumulated)
-    /// - `dlogits`: Upstream gradient w.r.t logits `[n, v]`
-    /// - `h`: Forward input hidden states `[n, d]`
-    /// - `weight`: Forward vocabulary embedding matrix `[v, d]`
-    /// - `n`: Number of tokens ($B \times T$)
-    /// - `d`: Hidden dimension (must be divisible by 4)
-    /// - `v`: Vocabulary size
+    /// - `dh`: Gradient w.r.t input hidden state `[num_tokens, dim]` (accumulated)
+    /// - `dw`: Gradient w.r.t vocabulary embedding matrix `[vocab_size, dim]` (accumulated)
+    /// - `dlogits`: Upstream gradient w.r.t logits `[num_tokens, vocab_size]`
+    /// - `h`: Forward input hidden states `[num_tokens, dim]`
+    /// - `weight`: Forward vocabulary embedding matrix `[vocab_size, dim]`
+    /// - `num_tokens`: Number of tokens ($B \times T$)
+    /// - `dim`: Hidden dimension (must be divisible by 4)
+    /// - `vocab_size`: Vocabulary size
     #[allow(clippy::too_many_arguments)]
     pub fn backward(
         dh: &mut [f32],
@@ -68,26 +75,26 @@ impl QuaternionLMHead {
         dlogits: &[f32],
         h: &[f32],
         weight: &[f32],
-        n: usize,
-        d: usize,
-        v: usize,
+        num_tokens: usize,
+        dim: usize,
+        vocab_size: usize,
     ) {
-        assert_eq!(d % 4, 0, "Hidden dimension d must be a multiple of 4");
+        assert_eq!(dim % 4, 0, "Hidden dimension dim must be a multiple of 4");
 
-        for i in 0..n {
-            let dlogits_row = &dlogits[i * v..(i + 1) * v];
-            let h_row = &h[i * d..(i + 1) * d];
-            let dh_row = &mut dh[i * d..(i + 1) * d];
+        for i in 0..num_tokens {
+            let dlogits_row = &dlogits[i * vocab_size..(i + 1) * vocab_size];
+            let h_row = &h[i * dim..(i + 1) * dim];
+            let dh_row = &mut dh[i * dim..(i + 1) * dim];
 
-            for j in 0..v {
+            for j in 0..vocab_size {
                 let dl = dlogits_row[j];
                 if dl == 0.0 {
                     continue;
                 }
-                let w_row = &weight[j * d..(j + 1) * d];
-                let dw_row = &mut dw[j * d..(j + 1) * d];
+                let w_row = &weight[j * dim..(j + 1) * dim];
+                let dw_row = &mut dw[j * dim..(j + 1) * dim];
 
-                for k in 0..d {
+                for k in 0..dim {
                     dh_row[k] += dl * w_row[k];
                     dw_row[k] += dl * h_row[k];
                 }

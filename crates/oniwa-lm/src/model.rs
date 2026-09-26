@@ -8,9 +8,9 @@
 //! - Manual backpropagation (zero-allocation flat buffers)
 
 use crate::layers::attention::CausalSelfAttention;
-use crate::layers::mlp::SwiGLU;
+use crate::layers::mlp::SwiGlu;
 use crate::layers::quaternion_head::QuaternionLMHead;
-use crate::layers::rmsnorm::RMSNorm;
+use crate::layers::rmsnorm::RmsNorm;
 use crate::reproducibility::DeterministicRng;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -592,7 +592,7 @@ impl ModelWeights {
             let mut norm1 = vec![0.0f32; n * c];
             let mut rstd1 = vec![0.0f32; n];
             let rms_att_w = &self.params[lo.rms_att..lo.rms_att + c];
-            RMSNorm::forward(&mut norm1, &mut rstd1, &x_in, rms_att_w, 1e-5, c);
+            RmsNorm::forward(&mut norm1, &mut rstd1, &x_in, rms_att_w, 1e-5, c);
 
             // 2. Causal Self-Attention
             let mut q = vec![0.0f32; n * c];
@@ -631,7 +631,7 @@ impl ModelWeights {
             let mut norm2 = vec![0.0f32; n * c];
             let mut rstd2 = vec![0.0f32; n];
             let rms_ffn_w = &self.params[lo.rms_ffn..lo.rms_ffn + c];
-            RMSNorm::forward(&mut norm2, &mut rstd2, &x_mid, rms_ffn_w, 1e-5, c);
+            RmsNorm::forward(&mut norm2, &mut rstd2, &x_mid, rms_ffn_w, 1e-5, c);
 
             // 5. SwiGLU MLP
             let mut act_g = vec![0.0f32; n * ffn];
@@ -642,7 +642,7 @@ impl ModelWeights {
             let gate_up_w = &self.params[lo.gate_up..lo.gate_up + c * 2 * ffn];
             let down_w = &self.params[lo.down..lo.down + ffn * c];
 
-            SwiGLU::forward(
+            SwiGlu::forward(
                 &mut post_mlp,
                 &mut act_g,
                 &mut act_u,
@@ -688,7 +688,7 @@ impl ModelWeights {
         let mut final_norm = vec![0.0f32; n * c];
         let mut rstd_final = vec![0.0f32; n];
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
-        RMSNorm::forward(
+        RmsNorm::forward(
             &mut final_norm,
             &mut rstd_final,
             &x_final_in,
@@ -832,7 +832,7 @@ impl ModelWeights {
         // (2) Final RMSNorm Backward
         let mut d_x_curr = vec![0.0f32; n * c];
         let d_rms_final = &mut self.grads[layout.rms_final..layout.rms_final + c];
-        RMSNorm::backward(
+        RmsNorm::backward(
             &mut d_x_curr,
             d_rms_final,
             &d_final_norm,
@@ -859,7 +859,7 @@ impl ModelWeights {
             let w_gate_up = &self.params[lo.gate_up..lo.gate_up + c * 2 * ffn];
             let w_down = &self.params[lo.down..lo.down + ffn * c];
 
-            SwiGLU::backward(
+            SwiGlu::backward(
                 &mut dnorm2,
                 dw_gate_up,
                 dw_down,
@@ -878,7 +878,7 @@ impl ModelWeights {
             // RMSNorm 2 Backward -> accumulate into dx_mid
             let d_rms_ffn = &mut self.grads[lo.rms_ffn..lo.rms_ffn + c];
             let rms_ffn_w = &self.params[lo.rms_ffn..lo.rms_ffn + c];
-            RMSNorm::backward(
+            RmsNorm::backward(
                 &mut dx_mid,
                 d_rms_ffn,
                 &dnorm2,
@@ -922,7 +922,7 @@ impl ModelWeights {
             // RMSNorm 1 Backward -> accumulate into dx_in
             let d_rms_att = &mut self.grads[lo.rms_att..lo.rms_att + c];
             let rms_att_w = &self.params[lo.rms_att..lo.rms_att + c];
-            RMSNorm::backward(
+            RmsNorm::backward(
                 &mut dx_in,
                 d_rms_att,
                 &dnorm1,
@@ -1008,7 +1008,7 @@ impl ModelWeights {
 
             // 1. RMSNorm 1
             let rms_att_w = &self.params[lo.rms_att..lo.rms_att + c];
-            RMSNorm::forward(&mut norm1, &mut rstd1, &x_curr, rms_att_w, 1e-5, c);
+            RmsNorm::forward(&mut norm1, &mut rstd1, &x_curr, rms_att_w, 1e-5, c);
 
             // 2. Attention
             let qkv_w = &self.params[lo.qkv..lo.qkv + c * 3 * c];
@@ -1036,12 +1036,12 @@ impl ModelWeights {
 
             // 4. RMSNorm 2
             let rms_ffn_w = &self.params[lo.rms_ffn..lo.rms_ffn + c];
-            RMSNorm::forward(&mut norm2, &mut rstd2, &x_curr, rms_ffn_w, 1e-5, c);
+            RmsNorm::forward(&mut norm2, &mut rstd2, &x_curr, rms_ffn_w, 1e-5, c);
 
             // 5. SwiGLU
             let gate_up_w = &self.params[lo.gate_up..lo.gate_up + c * 2 * ffn];
             let down_w = &self.params[lo.down..lo.down + ffn * c];
-            SwiGLU::forward(
+            SwiGlu::forward(
                 &mut post_mlp,
                 &mut act_g,
                 &mut act_u,
@@ -1064,7 +1064,7 @@ impl ModelWeights {
         let mut final_norm = vec![0.0f32; n * c];
         let mut rstd_final = vec![0.0f32; n];
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
-        RMSNorm::forward(
+        RmsNorm::forward(
             &mut final_norm,
             &mut rstd_final,
             &x_curr,
@@ -1162,7 +1162,7 @@ impl ModelWeights {
             let mut norm1 = vec![0.0f32; t * c];
             let mut rstd1 = vec![0.0f32; t];
             let rms_att_w = &self.params[lo.rms_att..lo.rms_att + c];
-            RMSNorm::forward(&mut norm1, &mut rstd1, &x_in, rms_att_w, 1e-5, c);
+            RmsNorm::forward(&mut norm1, &mut rstd1, &x_in, rms_att_w, 1e-5, c);
 
             // 2. Causal Self-Attention
             let mut q = vec![0.0f32; t * c];
@@ -1201,7 +1201,7 @@ impl ModelWeights {
             let mut norm2 = vec![0.0f32; t * c];
             let mut rstd2 = vec![0.0f32; t];
             let rms_ffn_w = &self.params[lo.rms_ffn..lo.rms_ffn + c];
-            RMSNorm::forward(&mut norm2, &mut rstd2, &x_mid, rms_ffn_w, 1e-5, c);
+            RmsNorm::forward(&mut norm2, &mut rstd2, &x_mid, rms_ffn_w, 1e-5, c);
 
             // 5. SwiGLU MLP
             let mut act_g = vec![0.0f32; t * ffn];
@@ -1212,7 +1212,7 @@ impl ModelWeights {
             let gate_up_w = &self.params[lo.gate_up..lo.gate_up + c * 2 * ffn];
             let down_w = &self.params[lo.down..lo.down + ffn * c];
 
-            SwiGLU::forward(
+            SwiGlu::forward(
                 &mut post_mlp,
                 &mut act_g,
                 &mut act_u,
@@ -1235,7 +1235,7 @@ impl ModelWeights {
         let mut final_norm = vec![0.0f32; t * c];
         let mut rstd_final = vec![0.0f32; t];
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
-        RMSNorm::forward(
+        RmsNorm::forward(
             &mut final_norm,
             &mut rstd_final,
             &x_curr,
@@ -1562,7 +1562,7 @@ impl QuaternionModelWeights {
             let mut norm1 = vec![0.0f32; n * c];
             let mut rstd1 = vec![0.0f32; n];
             let rms_att_w = &self.params[lo.rms_att..lo.rms_att + c];
-            RMSNorm::forward(&mut norm1, &mut rstd1, &x_in, rms_att_w, 1e-5, c);
+            RmsNorm::forward(&mut norm1, &mut rstd1, &x_in, rms_att_w, 1e-5, c);
 
             // 2. Causal Self-Attention
             let mut q = vec![0.0f32; n * c];
@@ -1601,7 +1601,7 @@ impl QuaternionModelWeights {
             let mut norm2 = vec![0.0f32; n * c];
             let mut rstd2 = vec![0.0f32; n];
             let rms_ffn_w = &self.params[lo.rms_ffn..lo.rms_ffn + c];
-            RMSNorm::forward(&mut norm2, &mut rstd2, &x_mid, rms_ffn_w, 1e-5, c);
+            RmsNorm::forward(&mut norm2, &mut rstd2, &x_mid, rms_ffn_w, 1e-5, c);
 
             // 5. SwiGLU MLP
             let mut act_g = vec![0.0f32; n * ffn];
@@ -1612,7 +1612,7 @@ impl QuaternionModelWeights {
             let gate_up_w = &self.params[lo.gate_up..lo.gate_up + c * 2 * ffn];
             let down_w = &self.params[lo.down..lo.down + ffn * c];
 
-            SwiGLU::forward(
+            SwiGlu::forward(
                 &mut post_mlp,
                 &mut act_g,
                 &mut act_u,
@@ -1658,7 +1658,7 @@ impl QuaternionModelWeights {
         let mut final_norm = vec![0.0f32; n * c];
         let mut rstd_final = vec![0.0f32; n];
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
-        RMSNorm::forward(
+        RmsNorm::forward(
             &mut final_norm,
             &mut rstd_final,
             &x_final_in,
@@ -1757,7 +1757,7 @@ impl QuaternionModelWeights {
         // (2) Final RMSNorm Backward
         let mut d_x_curr = vec![0.0f32; n * c];
         let d_rms_final = &mut self.grads[layout.rms_final..layout.rms_final + c];
-        RMSNorm::backward(
+        RmsNorm::backward(
             &mut d_x_curr,
             d_rms_final,
             &d_final_norm,
@@ -1782,7 +1782,7 @@ impl QuaternionModelWeights {
             let w_gate_up = &self.params[lo.gate_up..lo.gate_up + c * 2 * ffn];
             let w_down = &self.params[lo.down..lo.down + ffn * c];
 
-            SwiGLU::backward(
+            SwiGlu::backward(
                 &mut dnorm2,
                 dw_gate_up,
                 dw_down,
@@ -1800,7 +1800,7 @@ impl QuaternionModelWeights {
 
             let d_rms_ffn = &mut self.grads[lo.rms_ffn..lo.rms_ffn + c];
             let rms_ffn_w = &self.params[lo.rms_ffn..lo.rms_ffn + c];
-            RMSNorm::backward(
+            RmsNorm::backward(
                 &mut dx_mid,
                 d_rms_ffn,
                 &dnorm2,
@@ -1841,7 +1841,7 @@ impl QuaternionModelWeights {
 
             let d_rms_att = &mut self.grads[lo.rms_att..lo.rms_att + c];
             let rms_att_w = &self.params[lo.rms_att..lo.rms_att + c];
-            RMSNorm::backward(
+            RmsNorm::backward(
                 &mut dx_in,
                 d_rms_att,
                 &dnorm1,
@@ -1927,7 +1927,7 @@ impl QuaternionModelWeights {
 
             // 1. RMSNorm 1
             let rms_att_w = &self.params[lo.rms_att..lo.rms_att + c];
-            RMSNorm::forward(&mut norm1, &mut rstd1, &x_curr, rms_att_w, 1e-5, c);
+            RmsNorm::forward(&mut norm1, &mut rstd1, &x_curr, rms_att_w, 1e-5, c);
 
             // 2. Causal Self-Attention
             let qkv_w = &self.params[lo.qkv..lo.qkv + c * 3 * c];
@@ -1956,12 +1956,12 @@ impl QuaternionModelWeights {
 
             // 4. RMSNorm 2
             let rms_ffn_w = &self.params[lo.rms_ffn..lo.rms_ffn + c];
-            RMSNorm::forward(&mut norm2, &mut rstd2, &x_curr, rms_ffn_w, 1e-5, c);
+            RmsNorm::forward(&mut norm2, &mut rstd2, &x_curr, rms_ffn_w, 1e-5, c);
 
             // 5. SwiGLU
             let gate_up_w = &self.params[lo.gate_up..lo.gate_up + c * 2 * ffn];
             let down_w = &self.params[lo.down..lo.down + ffn * c];
-            SwiGLU::forward(
+            SwiGlu::forward(
                 &mut post_mlp,
                 &mut act_g,
                 &mut act_u,
@@ -1984,7 +1984,7 @@ impl QuaternionModelWeights {
         let mut final_norm = vec![0.0f32; n * c];
         let mut rstd_final = vec![0.0f32; n];
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
-        RMSNorm::forward(
+        RmsNorm::forward(
             &mut final_norm,
             &mut rstd_final,
             &x_curr,
@@ -2070,7 +2070,7 @@ impl QuaternionModelWeights {
             let mut norm1 = vec![0.0f32; t * c];
             let mut rstd1 = vec![0.0f32; t];
             let rms_att_w = &self.params[lo.rms_att..lo.rms_att + c];
-            RMSNorm::forward(&mut norm1, &mut rstd1, &x_in, rms_att_w, 1e-5, c);
+            RmsNorm::forward(&mut norm1, &mut rstd1, &x_in, rms_att_w, 1e-5, c);
 
             // 2. Causal Self-Attention
             let mut q = vec![0.0f32; t * c];
@@ -2109,7 +2109,7 @@ impl QuaternionModelWeights {
             let mut norm2 = vec![0.0f32; t * c];
             let mut rstd2 = vec![0.0f32; t];
             let rms_ffn_w = &self.params[lo.rms_ffn..lo.rms_ffn + c];
-            RMSNorm::forward(&mut norm2, &mut rstd2, &x_mid, rms_ffn_w, 1e-5, c);
+            RmsNorm::forward(&mut norm2, &mut rstd2, &x_mid, rms_ffn_w, 1e-5, c);
 
             // 5. SwiGLU MLP
             let mut act_g = vec![0.0f32; t * ffn];
@@ -2120,7 +2120,7 @@ impl QuaternionModelWeights {
             let gate_up_w = &self.params[lo.gate_up..lo.gate_up + c * 2 * ffn];
             let down_w = &self.params[lo.down..lo.down + ffn * c];
 
-            SwiGLU::forward(
+            SwiGlu::forward(
                 &mut post_mlp,
                 &mut act_g,
                 &mut act_u,
@@ -2143,7 +2143,7 @@ impl QuaternionModelWeights {
         let mut final_norm = vec![0.0f32; t * c];
         let mut rstd_final = vec![0.0f32; t];
         let rms_final_w = &self.params[layout.rms_final..layout.rms_final + c];
-        RMSNorm::forward(
+        RmsNorm::forward(
             &mut final_norm,
             &mut rstd_final,
             &x_curr,

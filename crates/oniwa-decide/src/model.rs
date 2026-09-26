@@ -7,8 +7,7 @@
 //! - Outputs type-safe decisions in a single forward pass
 
 use crate::layers::{
-    BidirectionalSelfAttention, QuaternionLinear, QuaternionSelfAttention, QuaternionSwiGLU,
-    RMSNorm, SwiGLU,
+    Attention, QuaternionAttention, QuaternionLinear, QuaternionSwiGlu, RmsNorm, SwiGlu,
 };
 use crate::loss::LossCalculator;
 use oniwa_lm::reproducibility::DeterministicRng;
@@ -442,7 +441,7 @@ impl DecisionModel {
             let mut x1 = vec![0.0f32; n * c];
             let mut rstd1 = vec![0.0f32; n];
             let gamma1 = &self.params[l.ln1_gamma..l.ln1_gamma + c];
-            RMSNorm::forward(&mut x1, &mut rstd1, &cur, gamma1, n, c, 1e-5);
+            RmsNorm::forward(&mut x1, &mut rstd1, &cur, gamma1, n, c, 1e-5);
 
             let mut act_q = vec![0.0f32; n * c];
             let mut act_k = vec![0.0f32; n * c];
@@ -455,7 +454,7 @@ impl DecisionModel {
                 let in_quat = c / 4;
                 let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + 3 * in_quat * in_quat * 4];
                 let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + in_quat * in_quat * 4];
-                QuaternionSelfAttention::forward(
+                QuaternionAttention::forward(
                     &mut attn_out,
                     &mut act_q,
                     &mut act_k,
@@ -473,7 +472,7 @@ impl DecisionModel {
             } else {
                 let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + c * (3 * c)];
                 let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + c * c];
-                BidirectionalSelfAttention::forward(
+                Attention::forward(
                     &mut attn_out,
                     &mut act_q,
                     &mut act_k,
@@ -499,7 +498,7 @@ impl DecisionModel {
             let mut x2 = vec![0.0f32; n * c];
             let mut rstd2 = vec![0.0f32; n];
             let gamma2 = &self.params[l.ln2_gamma..l.ln2_gamma + c];
-            RMSNorm::forward(&mut x2, &mut rstd2, &cur, gamma2, n, c, 1e-5);
+            RmsNorm::forward(&mut x2, &mut rstd2, &cur, gamma2, n, c, 1e-5);
 
             let mut act_g = vec![0.0f32; n * ffn];
             let mut act_u = vec![0.0f32; n * ffn];
@@ -512,7 +511,7 @@ impl DecisionModel {
                 let w_gu =
                     &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + 2 * ffn_quat * in_quat * 4];
                 let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + in_quat * ffn_quat * 4];
-                QuaternionSwiGLU::forward(
+                QuaternionSwiGlu::forward(
                     &mut mlp_out,
                     &mut act_g,
                     &mut act_u,
@@ -527,7 +526,7 @@ impl DecisionModel {
             } else {
                 let w_gu = &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + c * (2 * ffn)];
                 let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + ffn * c];
-                SwiGLU::forward(
+                SwiGlu::forward(
                     &mut mlp_out,
                     &mut act_g,
                     &mut act_u,
@@ -567,7 +566,7 @@ impl DecisionModel {
         let mut norm_f_out = vec![0.0f32; n * c];
         let mut rstd_f = vec![0.0f32; n];
         let gamma_f = &self.params[self.offset_ln_f..self.offset_ln_f + c];
-        RMSNorm::forward(&mut norm_f_out, &mut rstd_f, &cur, gamma_f, n, c, 1e-5);
+        RmsNorm::forward(&mut norm_f_out, &mut rstd_f, &cur, gamma_f, n, c, 1e-5);
 
         // Tied MLM projection: each token state is scored against the input embedding table.
         let mut mlm_logits = vec![0.0f32; n * vocab_size];
@@ -873,7 +872,7 @@ impl DecisionModel {
         };
         let gamma_f = &self.params[self.offset_ln_f..self.offset_ln_f + c];
         let dgamma_f = &mut self.grads[self.offset_ln_f..self.offset_ln_f + c];
-        RMSNorm::backward(
+        RmsNorm::backward(
             &mut dcur,
             dgamma_f,
             &d_norm_f_out,
@@ -908,7 +907,7 @@ impl DecisionModel {
                 let mut dw_gu = vec![0.0f32; 2 * ffn_quat * in_quat * 4];
                 let mut dw_dn = vec![0.0f32; in_quat * ffn_quat * 4];
 
-                QuaternionSwiGLU::backward(
+                QuaternionSwiGlu::backward(
                     &mut dx2, &mut dw_gu, &mut dw_dn, &dcur, &lc.x2, &lc.act_g, &lc.act_u,
                     &lc.act_h, w_gu, w_dn, n, c, ffn,
                 );
@@ -925,7 +924,7 @@ impl DecisionModel {
                 let mut dw_gu = vec![0.0f32; c * (2 * ffn)];
                 let mut dw_dn = vec![0.0f32; ffn * c];
 
-                SwiGLU::backward(
+                SwiGlu::backward(
                     &mut dx2, &mut dw_gu, &mut dw_dn, &dcur, &lc.x2, &lc.act_g, &lc.act_u,
                     &lc.act_h, w_gu, w_dn, n, c, ffn,
                 );
@@ -942,7 +941,7 @@ impl DecisionModel {
             let mut d_mid = vec![0.0f32; n * c];
             let dgamma2 = &mut self.grads[l.ln2_gamma..l.ln2_gamma + c];
             // LN2 Backward: approximate pre-normalization tensor via lc.out
-            RMSNorm::backward(
+            RmsNorm::backward(
                 &mut d_mid, dgamma2, &dx2, &lc.out, // approximately used in RMSNorm backward
                 gamma2, &lc.rstd2, n, c,
             );
@@ -961,7 +960,7 @@ impl DecisionModel {
                 let mut dw_qkv = vec![0.0f32; 3 * in_quat * in_quat * 4];
                 let mut dw_proj = vec![0.0f32; in_quat * in_quat * 4];
 
-                QuaternionSelfAttention::backward(
+                QuaternionAttention::backward(
                     &mut dx1,
                     &mut dw_qkv,
                     &mut dw_proj,
@@ -992,7 +991,7 @@ impl DecisionModel {
                 let mut dw_qkv = vec![0.0f32; c * (3 * c)];
                 let mut dw_proj = vec![0.0f32; c * c];
 
-                BidirectionalSelfAttention::backward(
+                Attention::backward(
                     &mut dx1,
                     &mut dw_qkv,
                     &mut dw_proj,
@@ -1023,7 +1022,7 @@ impl DecisionModel {
             let mut d_prev = vec![0.0f32; n * c];
             let gamma1 = &self.params[l.ln1_gamma..l.ln1_gamma + c];
             let dgamma1 = &mut self.grads[l.ln1_gamma..l.ln1_gamma + c];
-            RMSNorm::backward(
+            RmsNorm::backward(
                 &mut d_prev,
                 dgamma1,
                 &dx1,

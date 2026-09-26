@@ -13,9 +13,9 @@
 
 use crate::layers::QuaternionLinear;
 
-pub struct QuaternionSwiGLU;
+pub struct QuaternionSwiGlu;
 
-impl QuaternionSwiGLU {
+impl QuaternionSwiGlu {
     #[inline(always)]
     fn silu(x: f32) -> f32 {
         x / (1.0 + (-x).exp())
@@ -30,7 +30,7 @@ impl QuaternionSwiGLU {
     /// Forward pass of Quaternion SwiGLU MLP
     ///
     /// - `w_gate_up`: Quaternion weights for Gate and Up projections:
-    ///   `[2 * ffn_quat, in_quat * 4]` where `in_quat = c / 4`, `ffn_quat = ffn / 4`
+    ///   `[2 * ffn_quat, in_quat * 4]` where `in_quat = dim / 4`, `ffn_quat = ffn_dim / 4`
     /// - `w_down`: Quaternion weights for Down projection:
     ///   `[in_quat, ffn_quat * 4]`
     #[allow(clippy::too_many_arguments)]
@@ -43,13 +43,13 @@ impl QuaternionSwiGLU {
         w_gate_up: &[f32],
         w_down: &[f32],
         n: usize,
-        c: usize,
-        ffn: usize,
+        dim: usize,
+        ffn_dim: usize,
     ) {
-        assert_eq!(c % 4, 0, "Embedding dim must be divisible by 4");
-        assert_eq!(ffn % 4, 0, "FFN dim must be divisible by 4");
-        let in_quat = c / 4;
-        let ffn_quat = ffn / 4;
+        assert_eq!(dim % 4, 0, "Embedding dim must be divisible by 4");
+        assert_eq!(ffn_dim % 4, 0, "FFN dim must be divisible by 4");
+        let in_quat = dim / 4;
+        let ffn_quat = ffn_dim / 4;
         let gate_up_block = ffn_quat * in_quat * 4;
 
         let w_gate = &w_gate_up[0..gate_up_block];
@@ -60,7 +60,7 @@ impl QuaternionSwiGLU {
         QuaternionLinear::forward(act_u, inp, w_up, None, n, in_quat, ffn_quat);
 
         // 2. Component-wise SwiGLU: H = SiLU(G) * U across all N * FFN real components
-        for idx in 0..n * ffn {
+        for idx in 0..n * ffn_dim {
             let g = act_g[idx];
             let u = act_u[idx];
             act_h[idx] = Self::silu(g) * u;
@@ -84,26 +84,26 @@ impl QuaternionSwiGLU {
         w_gate_up: &[f32],
         w_down: &[f32],
         n: usize,
-        c: usize,
-        ffn: usize,
+        dim: usize,
+        ffn_dim: usize,
     ) {
-        let in_quat = c / 4;
-        let ffn_quat = ffn / 4;
+        let in_quat = dim / 4;
+        let ffn_quat = ffn_dim / 4;
         let gate_up_block = ffn_quat * in_quat * 4;
 
         let w_gate = &w_gate_up[0..gate_up_block];
         let w_up = &w_gate_up[gate_up_block..2 * gate_up_block];
 
         // 1. Backward through Down projection: dH and dw_down
-        let mut dh = vec![0.0f32; n * ffn];
+        let mut dh = vec![0.0f32; n * ffn_dim];
         QuaternionLinear::backward(
             &mut dh, dw_down, None, dout, act_h, w_down, n, ffn_quat, in_quat,
         );
 
         // 2. Backward through SwiGLU component-wise activation
-        let mut dg = vec![0.0f32; n * ffn];
-        let mut du = vec![0.0f32; n * ffn];
-        for idx in 0..n * ffn {
+        let mut dg = vec![0.0f32; n * ffn_dim];
+        let mut du = vec![0.0f32; n * ffn_dim];
+        for idx in 0..n * ffn_dim {
             let g = act_g[idx];
             let u = act_u[idx];
             let dh_val = dh[idx];
@@ -117,8 +117,8 @@ impl QuaternionSwiGLU {
 
         // 3. Backward through Gate and Up projections: dinp and dw_gate_up
         let (dw_gate, dw_up) = dw_gate_up.split_at_mut(gate_up_block);
-        let mut dinp_g = vec![0.0f32; n * c];
-        let mut dinp_u = vec![0.0f32; n * c];
+        let mut dinp_g = vec![0.0f32; n * dim];
+        let mut dinp_u = vec![0.0f32; n * dim];
 
         QuaternionLinear::backward(
             &mut dinp_g,
@@ -143,7 +143,7 @@ impl QuaternionSwiGLU {
             ffn_quat,
         );
 
-        for idx in 0..n * c {
+        for idx in 0..n * dim {
             dinp[idx] += dinp_g[idx] + dinp_u[idx];
         }
     }
@@ -184,7 +184,7 @@ mod tests {
         let mut act_u = vec![0.0f32; n * ffn];
         let mut act_h = vec![0.0f32; n * ffn];
 
-        QuaternionSwiGLU::forward(
+        QuaternionSwiGlu::forward(
             &mut out, &mut act_g, &mut act_u, &mut act_h, &inp, &w_gate_up, &w_down, n, c, ffn,
         );
 
@@ -193,7 +193,7 @@ mod tests {
         let mut dw_gate_up = vec![0.0f32; w_gate_up.len()];
         let mut dw_down = vec![0.0f32; w_down.len()];
 
-        QuaternionSwiGLU::backward(
+        QuaternionSwiGlu::backward(
             &mut dinp,
             &mut dw_gate_up,
             &mut dw_down,
@@ -216,14 +216,14 @@ mod tests {
 
         inp[test_idx] = orig_x + eps;
         let mut out_p = vec![0.0f32; n * c];
-        QuaternionSwiGLU::forward(
+        QuaternionSwiGlu::forward(
             &mut out_p, &mut act_g, &mut act_u, &mut act_h, &inp, &w_gate_up, &w_down, n, c, ffn,
         );
         let loss_p: f32 = 0.5 * out_p.iter().map(|&v| v * v).sum::<f32>();
 
         inp[test_idx] = orig_x - eps;
         let mut out_m = vec![0.0f32; n * c];
-        QuaternionSwiGLU::forward(
+        QuaternionSwiGlu::forward(
             &mut out_m, &mut act_g, &mut act_u, &mut act_h, &inp, &w_gate_up, &w_down, n, c, ffn,
         );
         let loss_m: f32 = 0.5 * out_m.iter().map(|&v| v * v).sum::<f32>();
@@ -244,13 +244,13 @@ mod tests {
         let down_idx = 4;
         let orig_w_down = w_down[down_idx];
         w_down[down_idx] = orig_w_down + eps;
-        QuaternionSwiGLU::forward(
+        QuaternionSwiGlu::forward(
             &mut out_p, &mut act_g, &mut act_u, &mut act_h, &inp, &w_gate_up, &w_down, n, c, ffn,
         );
         let loss_down_p: f32 = 0.5 * out_p.iter().map(|&v| v * v).sum::<f32>();
 
         w_down[down_idx] = orig_w_down - eps;
-        QuaternionSwiGLU::forward(
+        QuaternionSwiGlu::forward(
             &mut out_m, &mut act_g, &mut act_u, &mut act_h, &inp, &w_gate_up, &w_down, n, c, ffn,
         );
         let loss_down_m: f32 = 0.5 * out_m.iter().map(|&v| v * v).sum::<f32>();
@@ -272,13 +272,13 @@ mod tests {
         let gu_idx = 7;
         let orig_gu = w_gate_up[gu_idx];
         w_gate_up[gu_idx] = orig_gu + eps;
-        QuaternionSwiGLU::forward(
+        QuaternionSwiGlu::forward(
             &mut out_p, &mut act_g, &mut act_u, &mut act_h, &inp, &w_gate_up, &w_down, n, c, ffn,
         );
         let loss_gu_p: f32 = 0.5 * out_p.iter().map(|&v| v * v).sum::<f32>();
 
         w_gate_up[gu_idx] = orig_gu - eps;
-        QuaternionSwiGLU::forward(
+        QuaternionSwiGlu::forward(
             &mut out_m, &mut act_g, &mut act_u, &mut act_h, &inp, &w_gate_up, &w_down, n, c, ffn,
         );
         let loss_gu_m: f32 = 0.5 * out_m.iter().map(|&v| v * v).sum::<f32>();
