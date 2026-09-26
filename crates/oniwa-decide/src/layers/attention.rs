@@ -4,6 +4,8 @@
 //! similar to BERT / ModernBERT.
 //! Used in the decision model (System One) to capture whole-sequence context in a single pass.
 
+use crate::simd::dot_product_simd;
+
 pub struct Attention;
 
 impl Attention {
@@ -94,16 +96,13 @@ impl Attention {
                     let q_vec = &act_q[q_offset..q_offset + head_dim];
                     let row_offset = att_offset + i * t;
 
-                    // Compute inner product across all tokens j
+                    // Compute inner product across all tokens j using SIMD
                     let mut max_val = f32::NEG_INFINITY;
                     for j in 0..t {
                         let k_offset = ((bi * t + j) * num_heads + hi) * head_dim;
                         let k_vec = &act_k[k_offset..k_offset + head_dim];
 
-                        let mut dot = 0.0f32;
-                        for d in 0..head_dim {
-                            dot += q_vec[d] * k_vec[d];
-                        }
+                        let dot = dot_product_simd(q_vec, k_vec);
                         let score = dot * scale;
                         act_att[row_offset + j] = score;
                         if score > max_val {
@@ -125,14 +124,15 @@ impl Attention {
 
                     // 4. Output = Att * V
                     let out_offset = ((bi * t + i) * num_heads + hi) * head_dim;
-                    for d in 0..head_dim {
-                        let mut sum_v = 0.0f32;
-                        for j in 0..t {
-                            let a = act_att[row_offset + j];
-                            let v_offset = ((bi * t + j) * num_heads + hi) * head_dim;
-                            sum_v += a * act_v[v_offset + d];
+                    let out_slice = &mut act_att_out[out_offset..out_offset + head_dim];
+                    out_slice.fill(0.0f32);
+                    for j in 0..t {
+                        let a = act_att[row_offset + j];
+                        let v_offset = ((bi * t + j) * num_heads + hi) * head_dim;
+                        let v_vec = &act_v[v_offset..v_offset + head_dim];
+                        for d in 0..head_dim {
+                            out_slice[d] += a * v_vec[d];
                         }
-                        act_att_out[out_offset + d] = sum_v;
                     }
                 }
             }

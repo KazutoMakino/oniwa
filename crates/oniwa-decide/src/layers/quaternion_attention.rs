@@ -10,7 +10,7 @@
 
 use crate::layers::Attention;
 use crate::layers::QuaternionLinear;
-use crate::simd::dot_product_4d_simd;
+use crate::simd::dot_product_simd;
 
 pub struct QuaternionAttention;
 
@@ -42,7 +42,7 @@ impl QuaternionAttention {
         let c_quat = dim / 4;
         let head_dim = dim / num_heads;
         assert_eq!(head_dim % 4, 0, "Head dim must be divisible by 4");
-        let d_h_quat = head_dim / 4;
+        let _d_h_quat = head_dim / 4;
         let scale = 1.0f32 / (head_dim as f32).sqrt();
 
         // 1. QKV Projections using QuaternionLinear
@@ -67,23 +67,15 @@ impl QuaternionAttention {
                     let q_offset = ((bi * t + i) * num_heads + hi) * head_dim;
                     let row_offset = att_offset + i * t;
 
+                    let q_vec = &act_q[q_offset..q_offset + head_dim];
+
                     let mut max_val = f32::NEG_INFINITY;
                     for j in 0..t {
                         let k_offset = ((bi * t + j) * num_heads + hi) * head_dim;
+                        let k_vec = &act_k[k_offset..k_offset + head_dim];
 
-                        // Quaternion inner product: sum_k Re(q_k ⊗ k_k*) = sum_k dot(q_k, k_k) via SIMD
-                        let mut dot = 0.0f32;
-                        for q_idx in 0..d_h_quat {
-                            let q_slice: &[f32; 4] = act_q
-                                [q_offset + q_idx * 4..q_offset + (q_idx + 1) * 4]
-                                .try_into()
-                                .unwrap();
-                            let k_slice: &[f32; 4] = act_k
-                                [k_offset + q_idx * 4..k_offset + (q_idx + 1) * 4]
-                                .try_into()
-                                .unwrap();
-                            dot += dot_product_4d_simd(q_slice, k_slice);
-                        }
+                        // Quaternion inner product: sum_k Re(q_k ⊗ k_k*) = sum_k dot(q_k, k_k) = dot_product_simd(q_vec, k_vec)
+                        let dot = dot_product_simd(q_vec, k_vec);
                         let score = dot * scale;
                         act_att[row_offset + j] = score;
                         if score > max_val {
@@ -105,14 +97,15 @@ impl QuaternionAttention {
 
                     // 4. Output = Att * V
                     let out_offset = ((bi * t + i) * num_heads + hi) * head_dim;
-                    for d in 0..head_dim {
-                        let mut sum_v = 0.0f32;
-                        for j in 0..t {
-                            let a = act_att[row_offset + j];
-                            let v_offset = ((bi * t + j) * num_heads + hi) * head_dim;
-                            sum_v += a * act_v[v_offset + d];
+                    let out_slice = &mut act_att_out[out_offset..out_offset + head_dim];
+                    out_slice.fill(0.0f32);
+                    for j in 0..t {
+                        let a = act_att[row_offset + j];
+                        let v_offset = ((bi * t + j) * num_heads + hi) * head_dim;
+                        let v_vec = &act_v[v_offset..v_offset + head_dim];
+                        for d in 0..head_dim {
+                            out_slice[d] += a * v_vec[d];
                         }
-                        act_att_out[out_offset + d] = sum_v;
                     }
                 }
             }

@@ -3,6 +3,8 @@
 //! Fast and numerically stable normalization adopted in modern architectures like LLaMA / Gemma.
 //! y = x / RMS(x) * weight
 
+use crate::simd::{mul_slices_assign_simd, scale_slice_simd, sum_squares_simd};
+
 pub struct RmsNorm;
 
 impl RmsNorm {
@@ -20,17 +22,14 @@ impl RmsNorm {
             let x = &inp[i * dim..(i + 1) * dim];
             let y = &mut out[i * dim..(i + 1) * dim];
 
-            let mut sum_sq = 0.0f32;
-            for &val in x {
-                sum_sq += val * val;
-            }
+            let sum_sq = sum_squares_simd(x);
             let mean_sq = sum_sq / (dim as f32);
             let inv_std = 1.0f32 / (mean_sq + eps).sqrt();
             rstd[i] = inv_std;
 
-            for j in 0..dim {
-                y[j] = x[j] * inv_std * weight[j];
-            }
+            // y = (x * inv_std) * weight
+            scale_slice_simd(y, x, inv_std);
+            mul_slices_assign_simd(y, weight);
         }
     }
 

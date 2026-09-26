@@ -134,6 +134,180 @@ pub fn dot_product_4d_simd(a: &[f32; 4], b: &[f32; 4]) -> f32 {
     }
 }
 
+/// Computes the dot product of two slices: `\sum a[i] * b[i]`
+#[inline(always)]
+pub fn dot_product_simd(a: &[f32], b: &[f32]) -> f32 {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "Slice length mismatch: a len {} vs b len {}",
+        a.len(),
+        b.len()
+    );
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let (a_chunks, a_rem) = a.as_chunks::<4>();
+        let (b_chunks, b_rem) = b.as_chunks::<4>();
+
+        let mut vacc = vdupq_n_f32(0.0);
+        for (ca, cb) in a_chunks.iter().zip(b_chunks.iter()) {
+            let va = vld1q_f32(ca.as_ptr());
+            let vb = vld1q_f32(cb.as_ptr());
+            vacc = vfmaq_f32(vacc, va, vb);
+        }
+
+        let mut sum = vaddvq_f32(vacc);
+        for i in 0..a_rem.len() {
+            sum += a_rem[i] * b_rem[i];
+        }
+        sum
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum::<f32>()
+    }
+}
+
+/// Computes the sum of squared elements in a slice: `\sum x[i]^2`
+#[inline(always)]
+pub fn sum_squares_simd(x: &[f32]) -> f32 {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let (chunks, rem) = x.as_chunks::<4>();
+        let mut vacc = vdupq_n_f32(0.0);
+        for chunk in chunks {
+            let vx = vld1q_f32(chunk.as_ptr());
+            vacc = vfmaq_f32(vacc, vx, vx);
+        }
+        let mut sum = vaddvq_f32(vacc);
+        for &val in rem {
+            sum += val * val;
+        }
+        sum
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        x.iter().map(|&v| v * v).sum::<f32>()
+    }
+}
+
+/// Element-wise slice multiplication: `out[i] = a[i] * b[i]`
+#[inline(always)]
+pub fn mul_slices_simd(out: &mut [f32], a: &[f32], b: &[f32]) {
+    assert_eq!(
+        out.len(),
+        a.len(),
+        "Slice length mismatch: out len {} vs a len {}",
+        out.len(),
+        a.len()
+    );
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "Slice length mismatch: a len {} vs b len {}",
+        a.len(),
+        b.len()
+    );
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let (out_chunks, out_rem) = out.as_chunks_mut::<4>();
+        let (a_chunks, a_rem) = a.as_chunks::<4>();
+        let (b_chunks, b_rem) = b.as_chunks::<4>();
+
+        for (o, (ca, cb)) in out_chunks
+            .iter_mut()
+            .zip(a_chunks.iter().zip(b_chunks.iter()))
+        {
+            let va = vld1q_f32(ca.as_ptr());
+            let vb = vld1q_f32(cb.as_ptr());
+            let vprod = vmulq_f32(va, vb);
+            vst1q_f32(o.as_mut_ptr(), vprod);
+        }
+
+        for i in 0..out_rem.len() {
+            out_rem[i] = a_rem[i] * b_rem[i];
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for i in 0..out.len() {
+            out[i] = a[i] * b[i];
+        }
+    }
+}
+
+/// In-place element-wise slice multiplication: `a[i] *= b[i]`
+#[inline(always)]
+pub fn mul_slices_assign_simd(a: &mut [f32], b: &[f32]) {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "Slice length mismatch: a len {} vs b len {}",
+        a.len(),
+        b.len()
+    );
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let (a_chunks, a_rem) = a.as_chunks_mut::<4>();
+        let (b_chunks, b_rem) = b.as_chunks::<4>();
+
+        for (ca, cb) in a_chunks.iter_mut().zip(b_chunks.iter()) {
+            let va = vld1q_f32(ca.as_ptr());
+            let vb = vld1q_f32(cb.as_ptr());
+            let vprod = vmulq_f32(va, vb);
+            vst1q_f32(ca.as_mut_ptr(), vprod);
+        }
+
+        for i in 0..a_rem.len() {
+            a_rem[i] *= b_rem[i];
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for i in 0..a.len() {
+            a[i] *= b[i];
+        }
+    }
+}
+
+/// Multiplies slice elements by a scalar: `out[i] = a[i] * scalar`
+#[inline(always)]
+pub fn scale_slice_simd(out: &mut [f32], a: &[f32], scalar: f32) {
+    assert_eq!(
+        out.len(),
+        a.len(),
+        "Slice length mismatch: out len {} vs a len {}",
+        out.len(),
+        a.len()
+    );
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let vscalar = vdupq_n_f32(scalar);
+        let (out_chunks, out_rem) = out.as_chunks_mut::<4>();
+        let (a_chunks, a_rem) = a.as_chunks::<4>();
+
+        for (o, ca) in out_chunks.iter_mut().zip(a_chunks.iter()) {
+            let va = vld1q_f32(ca.as_ptr());
+            let vprod = vmulq_f32(va, vscalar);
+            vst1q_f32(o.as_mut_ptr(), vprod);
+        }
+
+        for i in 0..out_rem.len() {
+            out_rem[i] = a_rem[i] * scalar;
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for i in 0..out.len() {
+            out[i] = a[i] * scalar;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,5 +372,113 @@ mod tests {
 
         let simd_dot = dot_product_4d_simd(&a, &b);
         assert!((simd_dot - ref_dot).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_sum_squares_simd_equivalence() {
+        // Test multiple lengths including multiples and non-multiples of 4
+        for len in [0, 1, 3, 4, 7, 16, 35, 128] {
+            let input: Vec<f32> = (0..len).map(|i| (i as f32) * 0.15 - 1.2).collect();
+            let ref_sum = input.iter().map(|&v| v * v).sum::<f32>();
+            let simd_sum = sum_squares_simd(&input);
+            let diff = (simd_sum - ref_sum).abs();
+            assert!(
+                diff < 1e-5 || diff / ref_sum.abs().max(1.0) < 1e-5,
+                "Failed for length {}: simd {} vs ref {}",
+                len,
+                simd_sum,
+                ref_sum
+            );
+        }
+    }
+
+    #[test]
+    fn test_mul_slices_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 29, 64] {
+            let a: Vec<f32> = (0..len).map(|i| (i as f32) * 0.25 - 0.5).collect();
+            let b: Vec<f32> = (0..len).map(|i| (i as f32) * -0.3 + 1.2).collect();
+            let mut out = vec![0.0f32; len];
+
+            mul_slices_simd(&mut out, &a, &b);
+
+            for i in 0..len {
+                let ref_val = a[i] * b[i];
+                let diff = (out[i] - ref_val).abs();
+                assert!(
+                    diff < 1e-6,
+                    "Failed at index {} for length {}: out {} vs ref {}",
+                    i,
+                    len,
+                    out[i],
+                    ref_val
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_scale_slice_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 33, 64] {
+            let a: Vec<f32> = (0..len).map(|i| (i as f32) * 0.1 - 2.0).collect();
+            let scalar = 1.75f32;
+            let mut out = vec![0.0f32; len];
+
+            scale_slice_simd(&mut out, &a, scalar);
+
+            for i in 0..len {
+                let ref_val = a[i] * scalar;
+                let diff = (out[i] - ref_val).abs();
+                assert!(
+                    diff < 1e-6,
+                    "Failed at index {} for length {}: out {} vs ref {}",
+                    i,
+                    len,
+                    out[i],
+                    ref_val
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_dot_product_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 31, 64] {
+            let a: Vec<f32> = (0..len).map(|i| (i as f32) * 0.15 - 1.0).collect();
+            let b: Vec<f32> = (0..len).map(|i| (i as f32) * -0.2 + 0.8).collect();
+            let ref_dot = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum::<f32>();
+            let simd_dot = dot_product_simd(&a, &b);
+            let diff = (simd_dot - ref_dot).abs();
+            assert!(
+                diff < 1e-5 || diff / ref_dot.abs().max(1.0) < 1e-5,
+                "Failed for length {}: simd {} vs ref {}",
+                len,
+                simd_dot,
+                ref_dot
+            );
+        }
+    }
+
+    #[test]
+    fn test_mul_slices_assign_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 29, 64] {
+            let a_orig: Vec<f32> = (0..len).map(|i| (i as f32) * 0.25 - 0.5).collect();
+            let b: Vec<f32> = (0..len).map(|i| (i as f32) * -0.3 + 1.2).collect();
+            let mut a = a_orig.clone();
+
+            mul_slices_assign_simd(&mut a, &b);
+
+            for i in 0..len {
+                let ref_val = a_orig[i] * b[i];
+                let diff = (a[i] - ref_val).abs();
+                assert!(
+                    diff < 1e-6,
+                    "Failed at index {} for length {}: out {} vs ref {}",
+                    i,
+                    len,
+                    a[i],
+                    ref_val
+                );
+            }
+        }
     }
 }
