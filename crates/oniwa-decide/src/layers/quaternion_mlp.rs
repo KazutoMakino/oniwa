@@ -12,6 +12,7 @@
 //! - Analytical backward pass derived with GHR calculus.
 
 use crate::layers::QuaternionLinear;
+use crate::simd::mul_slices_assign_simd;
 
 pub struct QuaternionSwiGlu;
 
@@ -58,13 +59,14 @@ impl QuaternionSwiGlu {
         // 1. Gate & Up projections via QuaternionLinear
         QuaternionLinear::forward(act_g, inp, w_gate, None, n, in_quat, ffn_quat);
         QuaternionLinear::forward(act_u, inp, w_up, None, n, in_quat, ffn_quat);
+        let total_ffn = n * ffn_dim;
 
         // 2. Component-wise SwiGLU: H = SiLU(G) * U across all N * FFN real components
-        for idx in 0..n * ffn_dim {
-            let g = act_g[idx];
-            let u = act_u[idx];
-            act_h[idx] = Self::silu(g) * u;
+        // Compute standard SiLU scalar into act_h temporarily, then SIMD multiply with act_u
+        for idx in 0..total_ffn {
+            act_h[idx] = Self::silu(act_g[idx]);
         }
+        mul_slices_assign_simd(&mut act_h[..total_ffn], &act_u[..total_ffn]);
 
         // 3. Down projection via QuaternionLinear
         QuaternionLinear::forward(out, act_h, w_down, None, n, ffn_quat, in_quat);

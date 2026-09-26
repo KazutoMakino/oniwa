@@ -8,6 +8,8 @@
 //!
 //! where Swish(g) = g * sigmoid(g) = g / (1 + exp(-g))
 
+use crate::simd::mul_slices_assign_simd;
+
 pub struct SwiGlu;
 
 impl SwiGlu {
@@ -48,10 +50,12 @@ impl SwiGlu {
                 }
                 act_g[i * ffn_dim + j] = dot_g;
                 act_u[i * ffn_dim + j] = dot_u;
-                let h = Self::silu(dot_g) * dot_u;
-                act_h[i * ffn_dim + j] = h;
+                act_h[i * ffn_dim + j] = Self::silu(dot_g);
             }
         }
+
+        let total_ffn = n * ffn_dim;
+        mul_slices_assign_simd(&mut act_h[..total_ffn], &act_u[..total_ffn]);
 
         for i in 0..n {
             let h_row = &act_h[i * ffn_dim..(i + 1) * ffn_dim];
