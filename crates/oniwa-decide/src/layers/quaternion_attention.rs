@@ -8,18 +8,18 @@
 //! - Output projection via QuaternionLinear ($D/4$ quaternions $\to D/4$ quaternions)
 //! - Rigorous analytical gradients derived from GHR calculus.
 
-use crate::layers::BidirectionalSelfAttention;
+use crate::layers::Attention;
 use crate::layers::QuaternionLinear;
 use crate::simd::dot_product_4d_simd;
 
-pub struct QuaternionSelfAttention;
+pub struct QuaternionAttention;
 
-impl QuaternionSelfAttention {
+impl QuaternionAttention {
     /// Forward pass of Quaternion Self-Attention
     ///
-    /// - `c`: Total real dimension (must be divisible by 4, and c/nh must be divisible by 4)
-    /// - `nh`: Number of attention heads
-    /// - `w_qkv`: Quaternion weights for Q, K, V `[3 * c_quat, c_quat * 4]` where `c_quat = c / 4`
+    /// - `dim`: Total real dimension (must be divisible by 4, and dim/num_heads must be divisible by 4)
+    /// - `num_heads`: Number of attention heads
+    /// - `w_qkv`: Quaternion weights for Q, K, V `[3 * c_quat, c_quat * 4]` where `c_quat = dim / 4`
     /// - `w_proj`: Quaternion weights for output projection `[c_quat, c_quat * 4]`
     #[allow(clippy::too_many_arguments)]
     pub fn forward(
@@ -34,16 +34,16 @@ impl QuaternionSelfAttention {
         w_proj: &[f32],
         b: usize,
         t: usize,
-        c: usize,
-        nh: usize,
+        dim: usize,
+        num_heads: usize,
     ) {
-        assert_eq!(c % 4, 0, "Embedding dim must be divisible by 4");
+        assert_eq!(dim % 4, 0, "Embedding dim must be divisible by 4");
         let n = b * t;
-        let c_quat = c / 4;
-        let d_h = c / nh;
-        assert_eq!(d_h % 4, 0, "Head dim must be divisible by 4");
-        let d_h_quat = d_h / 4;
-        let scale = 1.0f32 / (d_h as f32).sqrt();
+        let c_quat = dim / 4;
+        let head_dim = dim / num_heads;
+        assert_eq!(head_dim % 4, 0, "Head dim must be divisible by 4");
+        let d_h_quat = head_dim / 4;
+        let scale = 1.0f32 / (head_dim as f32).sqrt();
 
         // 1. QKV Projections using QuaternionLinear
         // w_qkv contains 3 sets of quaternion projection weights: [3 * c_quat, c_quat * 4]
@@ -56,20 +56,20 @@ impl QuaternionSelfAttention {
         QuaternionLinear::forward(act_v, inp, w_v_slice, None, n, c_quat, c_quat);
 
         // 2. Apply RoPE to Q and K
-        BidirectionalSelfAttention::apply_rope(act_q, b, t, nh, d_h, false);
-        BidirectionalSelfAttention::apply_rope(act_k, b, t, nh, d_h, false);
+        Attention::apply_rope(act_q, b, t, num_heads, head_dim, false);
+        Attention::apply_rope(act_k, b, t, num_heads, head_dim, false);
 
         // 3. Bidirectional Attention Matrix: S = Re(Q ⊗ K*) / sqrt(D_h)
         for bi in 0..b {
-            for hi in 0..nh {
-                let att_offset = (bi * nh + hi) * (t * t);
+            for hi in 0..num_heads {
+                let att_offset = (bi * num_heads + hi) * (t * t);
                 for i in 0..t {
-                    let q_offset = ((bi * t + i) * nh + hi) * d_h;
+                    let q_offset = ((bi * t + i) * num_heads + hi) * head_dim;
                     let row_offset = att_offset + i * t;
 
                     let mut max_val = f32::NEG_INFINITY;
                     for j in 0..t {
-                        let k_offset = ((bi * t + j) * nh + hi) * d_h;
+                        let k_offset = ((bi * t + j) * num_heads + hi) * head_dim;
 
                         // Quaternion inner product: sum_k Re(q_k ⊗ k_k*) = sum_k dot(q_k, k_k) via SIMD
                         let mut dot = 0.0f32;
@@ -104,12 +104,12 @@ impl QuaternionSelfAttention {
                     }
 
                     // 4. Output = Att * V
-                    let out_offset = ((bi * t + i) * nh + hi) * d_h;
-                    for d in 0..d_h {
+                    let out_offset = ((bi * t + i) * num_heads + hi) * head_dim;
+                    for d in 0..head_dim {
                         let mut sum_v = 0.0f32;
                         for j in 0..t {
                             let a = act_att[row_offset + j];
-                            let v_offset = ((bi * t + j) * nh + hi) * d_h;
+                            let v_offset = ((bi * t + j) * num_heads + hi) * head_dim;
                             sum_v += a * act_v[v_offset + d];
                         }
                         act_att_out[out_offset + d] = sum_v;
@@ -139,17 +139,17 @@ impl QuaternionSelfAttention {
         w_proj: &[f32],
         b: usize,
         t: usize,
-        c: usize,
-        nh: usize,
+        dim: usize,
+        num_heads: usize,
     ) {
         let n = b * t;
-        let c_quat = c / 4;
-        let d_h = c / nh;
-        let _d_h_quat = d_h / 4;
-        let scale = 1.0f32 / (d_h as f32).sqrt();
+        let c_quat = dim / 4;
+        let head_dim = dim / num_heads;
+        let _d_h_quat = head_dim / 4;
+        let scale = 1.0f32 / (head_dim as f32).sqrt();
 
         // 1. Output projection backward via QuaternionLinear
-        let mut d_att_out = vec![0.0f32; n * c];
+        let mut d_att_out = vec![0.0f32; n * dim];
         QuaternionLinear::backward(
             &mut d_att_out,
             dw_proj,
@@ -163,23 +163,23 @@ impl QuaternionSelfAttention {
         );
 
         // 2. Attention Matrix Backward
-        let mut dq = vec![0.0f32; n * c];
-        let mut dk = vec![0.0f32; n * c];
-        let mut dv = vec![0.0f32; n * c];
+        let mut dq = vec![0.0f32; n * dim];
+        let mut dk = vec![0.0f32; n * dim];
+        let mut dv = vec![0.0f32; n * dim];
 
         for bi in 0..b {
-            for hi in 0..nh {
-                let att_offset = (bi * nh + hi) * (t * t);
+            for hi in 0..num_heads {
+                let att_offset = (bi * num_heads + hi) * (t * t);
                 for i in 0..t {
-                    let d_out_offset = ((bi * t + i) * nh + hi) * d_h;
-                    let d_out_vec = &d_att_out[d_out_offset..d_out_offset + d_h];
+                    let d_out_offset = ((bi * t + i) * num_heads + hi) * head_dim;
+                    let d_out_vec = &d_att_out[d_out_offset..d_out_offset + head_dim];
                     let row_offset = att_offset + i * t;
 
                     // dV: sum_i (A_ij * d_out_i)
                     for j in 0..t {
                         let a = act_att[row_offset + j];
-                        let v_offset = ((bi * t + j) * nh + hi) * d_h;
-                        for d in 0..d_h {
+                        let v_offset = ((bi * t + j) * num_heads + hi) * head_dim;
+                        for d in 0..head_dim {
                             dv[v_offset + d] += a * d_out_vec[d];
                         }
                     }
@@ -187,10 +187,10 @@ impl QuaternionSelfAttention {
                     // dA_ij = d_out_i * V_j
                     let mut da = vec![0.0f32; t];
                     for j in 0..t {
-                        let v_offset = ((bi * t + j) * nh + hi) * d_h;
-                        let v_vec = &act_v[v_offset..v_offset + d_h];
+                        let v_offset = ((bi * t + j) * num_heads + hi) * head_dim;
+                        let v_vec = &act_v[v_offset..v_offset + head_dim];
                         let mut dot = 0.0f32;
-                        for d in 0..d_h {
+                        for d in 0..head_dim {
                             dot += d_out_vec[d] * v_vec[d];
                         }
                         da[j] = dot;
@@ -202,16 +202,16 @@ impl QuaternionSelfAttention {
                         sum_da_a += da[j] * act_att[row_offset + j];
                     }
 
-                    let q_offset = ((bi * t + i) * nh + hi) * d_h;
+                    let q_offset = ((bi * t + i) * num_heads + hi) * head_dim;
                     for j in 0..t {
                         let a = act_att[row_offset + j];
                         let ds = a * (da[j] - sum_da_a) * scale;
 
-                        let k_offset = ((bi * t + j) * nh + hi) * d_h;
+                        let k_offset = ((bi * t + j) * num_heads + hi) * head_dim;
                         // Score is Re(q_k ⊗ k_k*) = dot(q_k, k_k)
                         // Derivative w.r.t q_k is ds * k_k
                         // Derivative w.r.t k_k is ds * q_k
-                        for d in 0..d_h {
+                        for d in 0..head_dim {
                             dq[q_offset + d] += ds * act_k[k_offset + d];
                             dk[k_offset + d] += ds * act_q[q_offset + d];
                         }
@@ -221,8 +221,8 @@ impl QuaternionSelfAttention {
         }
 
         // 3. Inverse RoPE rotation on dQ and dK
-        BidirectionalSelfAttention::apply_rope(&mut dq, b, t, nh, d_h, true);
-        BidirectionalSelfAttention::apply_rope(&mut dk, b, t, nh, d_h, true);
+        Attention::apply_rope(&mut dq, b, t, num_heads, head_dim, true);
+        Attention::apply_rope(&mut dk, b, t, num_heads, head_dim, true);
 
         // 4. QKV Projections backward using QuaternionLinear
         let qkv_block = c_quat * c_quat * 4;
@@ -233,9 +233,9 @@ impl QuaternionSelfAttention {
         let (dw_q_slice, rest) = dw_qkv.split_at_mut(qkv_block);
         let (dw_k_slice, dw_v_slice) = rest.split_at_mut(qkv_block);
 
-        let mut dinp_q = vec![0.0f32; n * c];
-        let mut dinp_k = vec![0.0f32; n * c];
-        let mut dinp_v = vec![0.0f32; n * c];
+        let mut dinp_q = vec![0.0f32; n * dim];
+        let mut dinp_k = vec![0.0f32; n * dim];
+        let mut dinp_v = vec![0.0f32; n * dim];
 
         QuaternionLinear::backward(
             &mut dinp_q,
@@ -271,7 +271,7 @@ impl QuaternionSelfAttention {
             c_quat,
         );
 
-        for idx in 0..n * c {
+        for idx in 0..n * dim {
             dinp[idx] += dinp_q[idx] + dinp_k[idx] + dinp_v[idx];
         }
     }
@@ -315,7 +315,7 @@ mod tests {
         let mut act_att = vec![0.0f32; b * nh * t * t];
         let mut act_att_out = vec![0.0f32; n * c];
 
-        QuaternionSelfAttention::forward(
+        QuaternionAttention::forward(
             &mut out,
             &mut act_q,
             &mut act_k,
@@ -337,7 +337,7 @@ mod tests {
         let mut dw_qkv = vec![0.0f32; w_qkv.len()];
         let mut dw_proj = vec![0.0f32; w_proj.len()];
 
-        QuaternionSelfAttention::backward(
+        QuaternionAttention::backward(
             &mut dinp,
             &mut dw_qkv,
             &mut dw_proj,
@@ -363,7 +363,7 @@ mod tests {
 
         inp[test_idx] = orig_x + eps;
         let mut out_p = vec![0.0f32; n * c];
-        QuaternionSelfAttention::forward(
+        QuaternionAttention::forward(
             &mut out_p,
             &mut act_q,
             &mut act_k,
@@ -382,7 +382,7 @@ mod tests {
 
         inp[test_idx] = orig_x - eps;
         let mut out_m = vec![0.0f32; n * c];
-        QuaternionSelfAttention::forward(
+        QuaternionAttention::forward(
             &mut out_m,
             &mut act_q,
             &mut act_k,
@@ -415,7 +415,7 @@ mod tests {
         let w_idx = 2;
         let orig_w = w_proj[w_idx];
         w_proj[w_idx] = orig_w + eps;
-        QuaternionSelfAttention::forward(
+        QuaternionAttention::forward(
             &mut out_p,
             &mut act_q,
             &mut act_k,
@@ -433,7 +433,7 @@ mod tests {
         let loss_w_p: f32 = 0.5 * out_p.iter().map(|&v| v * v).sum::<f32>();
 
         w_proj[w_idx] = orig_w - eps;
-        QuaternionSelfAttention::forward(
+        QuaternionAttention::forward(
             &mut out_m,
             &mut act_q,
             &mut act_k,
@@ -466,7 +466,7 @@ mod tests {
         let qkv_idx = 5;
         let orig_qkv_w = w_qkv[qkv_idx];
         w_qkv[qkv_idx] = orig_qkv_w + eps;
-        QuaternionSelfAttention::forward(
+        QuaternionAttention::forward(
             &mut out_p,
             &mut act_q,
             &mut act_k,
@@ -484,7 +484,7 @@ mod tests {
         let loss_qkv_p: f32 = 0.5 * out_p.iter().map(|&v| v * v).sum::<f32>();
 
         w_qkv[qkv_idx] = orig_qkv_w - eps;
-        QuaternionSelfAttention::forward(
+        QuaternionAttention::forward(
             &mut out_m,
             &mut act_q,
             &mut act_k,
