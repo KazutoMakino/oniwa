@@ -308,6 +308,41 @@ pub fn scale_slice_simd(out: &mut [f32], a: &[f32], scalar: f32) {
     }
 }
 
+/// In-place element-wise slice addition: `a[i] += b[i]`
+#[inline(always)]
+pub fn add_slices_assign_simd(a: &mut [f32], b: &[f32]) {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "Slice length mismatch: a len {} vs b len {}",
+        a.len(),
+        b.len()
+    );
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let (a_chunks, a_rem) = a.as_chunks_mut::<4>();
+        let (b_chunks, b_rem) = b.as_chunks::<4>();
+
+        for (ca, cb) in a_chunks.iter_mut().zip(b_chunks.iter()) {
+            let va = vld1q_f32(ca.as_ptr());
+            let vb = vld1q_f32(cb.as_ptr());
+            let vsum = vaddq_f32(va, vb);
+            vst1q_f32(ca.as_mut_ptr(), vsum);
+        }
+
+        for i in 0..a_rem.len() {
+            a_rem[i] += b_rem[i];
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for i in 0..a.len() {
+            a[i] += b[i];
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,6 +504,30 @@ mod tests {
 
             for i in 0..len {
                 let ref_val = a_orig[i] * b[i];
+                let diff = (a[i] - ref_val).abs();
+                assert!(
+                    diff < 1e-6,
+                    "Failed at index {} for length {}: out {} vs ref {}",
+                    i,
+                    len,
+                    a[i],
+                    ref_val
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_add_slices_assign_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 29, 64] {
+            let a_orig: Vec<f32> = (0..len).map(|i| (i as f32) * 0.25 - 0.5).collect();
+            let b: Vec<f32> = (0..len).map(|i| (i as f32) * -0.3 + 1.2).collect();
+            let mut a = a_orig.clone();
+
+            add_slices_assign_simd(&mut a, &b);
+
+            for i in 0..len {
+                let ref_val = a_orig[i] + b[i];
                 let diff = (a[i] - ref_val).abs();
                 assert!(
                     diff < 1e-6,
