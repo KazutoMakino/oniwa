@@ -10,6 +10,7 @@ use crate::layers::{
     Attention, QuaternionAttention, QuaternionLinear, QuaternionSwiGlu, RmsNorm, SwiGlu,
 };
 use crate::loss::LossCalculator;
+use crate::simd::{add_slices_assign_simd, dot_product_simd, scale_slice_simd};
 use oniwa_lm::reproducibility::DeterministicRng;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -586,8 +587,7 @@ impl DecisionModel {
             for token in 0..vocab_size {
                 let w =
                     &self.params[self.offset_wte + token * c..self.offset_wte + (token + 1) * c];
-                mlm_logits[position * vocab_size + token] =
-                    h.iter().zip(w).map(|(a, b)| a * b).sum();
+                mlm_logits[position * vocab_size + token] = dot_product_simd(h, w);
             }
         }
 
@@ -595,13 +595,13 @@ impl DecisionModel {
         let mut pooled = vec![0.0f32; b * c];
         let inv_t = 1.0f32 / (t as f32);
         for bi in 0..b {
+            let pool_slice = &mut pooled[bi * c..(bi + 1) * c];
             for ti in 0..t {
-                let tok_offset = (bi * t + ti) * c;
-                let pool_offset = bi * c;
-                for j in 0..c {
-                    pooled[pool_offset + j] += norm_f_out[tok_offset + j] * inv_t;
-                }
+                let tok_slice = &norm_f_out[(bi * t + ti) * c..(bi * t + ti + 1) * c];
+                add_slices_assign_simd(pool_slice, tok_slice);
             }
+            let pool_copy = pool_slice.to_vec();
+            scale_slice_simd(pool_slice, &pool_copy, inv_t);
         }
 
         // 5. Decision heads
@@ -666,17 +666,10 @@ impl DecisionModel {
                 }
 
                 // Noul Head
-                let mut dot_n = 0.0f32;
-                for j in 0..c {
-                    dot_n += h[j] * w_hn[j];
-                }
-                noul_logits[bi] = dot_n;
+                noul_logits[bi] = dot_product_simd(h, w_hn);
 
                 // Score Head: mapped to [1.0, 5.0] via 3.0 + 2.0 * tanh(dot / 2.0)
-                let mut dot_s = 0.0f32;
-                for j in 0..c {
-                    dot_s += h[j] * w_hs[j];
-                }
+                let dot_s = dot_product_simd(h, w_hs);
                 let tanh = (dot_s * 0.5).tanh();
                 score_preds[bi] = if self.config.score_unit_interval {
                     0.5 + 0.5 * tanh
@@ -872,8 +865,7 @@ impl DecisionModel {
             for token in 0..vocab_size {
                 let w =
                     &self.params[self.offset_wte + token * c..self.offset_wte + (token + 1) * c];
-                mlm_logits[position * vocab_size + token] =
-                    h.iter().zip(w).map(|(a, b)| a * b).sum();
+                mlm_logits[position * vocab_size + token] = dot_product_simd(h, w);
             }
         }
 
@@ -881,13 +873,13 @@ impl DecisionModel {
         let mut pooled = vec![0.0f32; b * c];
         let inv_t = 1.0f32 / (t as f32);
         for bi in 0..b {
+            let pool_slice = &mut pooled[bi * c..(bi + 1) * c];
             for ti in 0..t {
-                let tok_offset = (bi * t + ti) * c;
-                let pool_offset = bi * c;
-                for j in 0..c {
-                    pooled[pool_offset + j] += norm_f_out[tok_offset + j] * inv_t;
-                }
+                let tok_slice = &norm_f_out[(bi * t + ti) * c..(bi * t + ti + 1) * c];
+                add_slices_assign_simd(pool_slice, tok_slice);
             }
+            let pool_copy = pool_slice.to_vec();
+            scale_slice_simd(pool_slice, &pool_copy, inv_t);
         }
         let pooling_ms = pool_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -954,17 +946,10 @@ impl DecisionModel {
                 }
 
                 // Noul Head
-                let mut dot_n = 0.0f32;
-                for j in 0..c {
-                    dot_n += h[j] * w_hn[j];
-                }
-                noul_logits[bi] = dot_n;
+                noul_logits[bi] = dot_product_simd(h, w_hn);
 
                 // Score Head: mapped to [1.0, 5.0] via 3.0 + 2.0 * tanh(dot / 2.0)
-                let mut dot_s = 0.0f32;
-                for j in 0..c {
-                    dot_s += h[j] * w_hs[j];
-                }
+                let dot_s = dot_product_simd(h, w_hs);
                 let tanh = (dot_s * 0.5).tanh();
                 score_preds[bi] = if self.config.score_unit_interval {
                     0.5 + 0.5 * tanh

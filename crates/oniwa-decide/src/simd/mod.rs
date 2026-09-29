@@ -176,4 +176,28 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_add_slices_assign_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 29, 64] {
+            let a_orig: Vec<f32> = (0..len).map(|i| (i as f32) * 0.25 - 0.5).collect();
+            let b: Vec<f32> = (0..len).map(|i| (i as f32) * -0.3 + 1.2).collect();
+            let mut a = a_orig.clone();
+
+            add_slices_assign_simd(&mut a, &b);
+
+            for i in 0..len {
+                let ref_val = a_orig[i] + b[i];
+                let diff = (a[i] - ref_val).abs();
+                assert!(
+                    diff < 1e-6,
+                    "Failed at index {} for length {}: out {} vs ref {}",
+                    i,
+                    len,
+                    a[i],
+                    ref_val
+                );
+            }
+        }
+    }
 }
