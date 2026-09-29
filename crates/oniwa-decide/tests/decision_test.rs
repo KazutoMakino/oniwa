@@ -827,3 +827,46 @@ fn gatekeeper_python_diff_is_code() {
     assert!(hunks[0].is_code);
     assert_eq!(hunks[0].extension, "py");
 }
+
+#[test]
+fn test_forward_with_profile() {
+    let config = DecisionConfig {
+        vocab_size: 64,
+        seq_len: 16,
+        dim: 32,
+        num_layers: 2,
+        num_heads: 2,
+        head_dim: 16,
+        ffn_dim: 64,
+        num_choices: 4,
+        temperature: 1.0,
+        use_quaternion_head: false,
+        quaternion_backbone: false,
+        score_unit_interval: false,
+    };
+    let mut rng = DeterministicRng::new(42);
+    let model = DecisionModel::new(config, &mut rng);
+
+    let tokens = vec![1u16; 16];
+    let (cache, breakdown) = model.forward_with_profile(&tokens, 1, 16);
+
+    assert_eq!(breakdown.layer_ms.len(), 2);
+    assert!(breakdown.embedding_ms >= 0.0);
+    for &l in &breakdown.layer_ms {
+        assert!(l >= 0.0);
+    }
+    assert!(breakdown.pooling_ms >= 0.0);
+    assert!(breakdown.heads_ms >= 0.0);
+    assert!(breakdown.total_ms >= 0.0);
+
+    // Verify cache output integrity
+    assert_eq!(cache.layer_caches.len(), 2);
+    assert_eq!(cache.choice_logits.len(), 4);
+    assert_eq!(cache.noul_logits.len(), 1);
+    assert_eq!(cache.score_preds.len(), 1);
+
+    // Also verify decide_with_profile
+    let (raw, dec_breakdown) = model.decide_with_profile(&tokens);
+    assert_eq!(dec_breakdown.layer_ms.len(), 2);
+    assert_eq!(raw.choice_probs.len(), 4);
+}

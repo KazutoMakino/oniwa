@@ -122,6 +122,26 @@ pub struct HardwareProfileRecord {
     pub joules_per_inference: f32,
     pub avg_power_watts: f32,
     pub thermal_celsius: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_breakdown: Option<crate::model::ForwardBreakdown>,
+}
+
+/// Detailed layer-by-layer microbenchmark profiling record
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LayerProfileRecord {
+    pub model_name: String,
+    pub config_type: String,
+    pub breakdown: crate::model::ForwardBreakdown,
+    pub percentages: LayerPercentages,
+}
+
+/// Percentage contribution of each phase to the total inference time
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LayerPercentages {
+    pub embedding_pct: f64,
+    pub layer_pct: Vec<f64>,
+    pub pooling_pct: f64,
+    pub heads_pct: f64,
 }
 
 #[cfg(test)]
