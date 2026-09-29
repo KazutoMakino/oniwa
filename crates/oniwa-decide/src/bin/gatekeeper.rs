@@ -10,6 +10,7 @@
 //! # Benchmark mode (`--bench`)
 //! Logs per-hunk results to `logs/benchmarks/gatekeeper_eval.jsonl`
 
+use oniwa_decide::router::{CascadeRouter, RouterPolicy, RoutingDecision};
 use oniwa_decide::{DecisionConfig, DecisionEngine, DecisionModel};
 use oniwa_lm::reproducibility::DeterministicRng;
 use oniwa_lm::tokenizer::{BpeTokenizer, CharTokenizer, Tokenizer};
@@ -40,6 +41,7 @@ struct CliArgs {
     checkpoint: Option<String>,
     help: bool,
     stdin_mode: bool,
+    router: bool,
 }
 
 fn parse_args() -> CliArgs {
@@ -49,11 +51,13 @@ fn parse_args() -> CliArgs {
         checkpoint: None,
         help: false,
         stdin_mode: false,
+        router: false,
     };
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--bench" => cli.bench = true,
+            "--router" => cli.router = true,
             "--checkpoint" => {
                 if let Some(v) = args.get(i + 1) {
                     cli.checkpoint = Some(v.clone());
@@ -77,6 +81,9 @@ fn print_help() {
     println!();
     println!("Options:");
     println!("  --bench        Enable benchmark mode (log results to logs/benchmarks/gatekeeper_eval.jsonl)");
+    println!(
+        "  --router       Enable cascade hybrid router (FastPath, Block, EscalateToSystemTwo)"
+    );
     println!("  --checkpoint   Path to checkpoint directory (default: auto-detect)");
     println!("  --stdin        Read diff from stdin instead of `git diff --cached`");
     println!("  -h, --help     Show this help message");
@@ -247,6 +254,8 @@ struct BenchRecord {
     inference_time_ms: u128,
     entropy_bits: f32,
     verdict: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    routing_action: Option<String>,
 }
 
 /// Calculate output entropy from probability distribution (in bits)
@@ -273,6 +282,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
     println!(" 🚧 ONIWA Gatekeeper: Standalone Gate-keeping Engine");
     println!("    Pure Rust · Offline · Sub-millisecond Inference");
+    if cli.router {
+        println!("    Cascade Hybrid Router: ACTIVE");
+    }
     println!("============================================================");
 
     // ── Step 1: Obtain diff text ─────────────────────────────────────
@@ -371,6 +383,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         DecisionEngine::new(model, tokenizer)
     };
 
+    let cascade_router = CascadeRouter::new(RouterPolicy::default());
+
     // ── Step 4: Scan each hunk ───────────────────────────────────────
     let mut blocked = false;
     let mut bench_records: Vec<BenchRecord> = Vec::new();
@@ -385,19 +399,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let score = decision.complexity.value;
         let ent = entropy_bits(&decision.category.probabilities);
 
-        let verdict = if hunk.is_code && noul && noul_conf >= BLOCK_CONFIDENCE_THRESHOLD {
-            blocked = true;
-            "BLOCK"
-        } else if noul {
-            "WARNING"
+        let routing_decision = if cli.router {
+            Some(cascade_router.route(&decision, None, Some(&hunk.file_path), hunk.is_code))
         } else {
-            "PASS"
+            None
+        };
+
+        let (verdict, action_str) = if let Some(ref rd) = routing_decision {
+            match rd {
+                RoutingDecision::Block { reason } => {
+                    blocked = true;
+                    ("BLOCK", format!("🚫 BLOCK ({})", reason.reason))
+                }
+                RoutingDecision::EscalateToSystemTwo { reason, .. } => {
+                    if hunk.is_code && noul && noul_conf >= BLOCK_CONFIDENCE_THRESHOLD {
+                        blocked = true;
+                        ("BLOCK", format!("🚫 BLOCK & Escalate ({})", reason))
+                    } else {
+                        ("ESCALATE", format!("⚡ ESCALATE System 2 ({})", reason))
+                    }
+                }
+                RoutingDecision::FastPath(verdict) => (
+                    "FAST_PATH",
+                    format!(
+                        "⚡ FAST_PATH ({:?}, conf={:.1}%)",
+                        verdict.category,
+                        verdict.confidence * 100.0
+                    ),
+                ),
+            }
+        } else if hunk.is_code && noul && noul_conf >= BLOCK_CONFIDENCE_THRESHOLD {
+            blocked = true;
+            ("BLOCK", "🚫 BLOCK".to_string())
+        } else if noul {
+            ("WARNING", "⚠️ WARNING".to_string())
+        } else {
+            ("PASS", "✅ PASS".to_string())
         };
 
         // Print per-hunk result
         let icon = match verdict {
             "BLOCK" => "🚫",
             "WARNING" => "⚠️",
+            "ESCALATE" => "⚡",
+            "FAST_PATH" => "⚡",
             _ => "✅",
         };
         println!(
@@ -415,6 +460,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             score,
             elapsed_ms
         );
+        if cli.router {
+            println!("         Action: {}", action_str);
+        }
 
         if cli.bench {
             bench_records.push(BenchRecord {
@@ -430,6 +478,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 inference_time_ms: elapsed_ms,
                 entropy_bits: ent,
                 verdict: verdict.to_string(),
+                routing_action: if cli.router { Some(action_str) } else { None },
             });
         }
     }
