@@ -7,7 +7,8 @@
 //! 3. Iso-Parameter Real Baseline (~315K params)
 
 use oniwa_decide::{
-    DecisionConfig, DecisionModel, HardwareProfileRecord, LatencyStats, MemoryProfile,
+    DecisionConfig, DecisionModel, ForwardBreakdown, HardwareProfileRecord, LatencyStats,
+    MemoryProfile,
 };
 use oniwa_lm::power::PowerTracker;
 use oniwa_lm::reproducibility::DeterministicRng;
@@ -27,6 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut num_inferences = 100usize;
     let mut output_jsonl: Option<String> = None;
     let mut num_seeds = 1usize;
+    let mut profile_layers = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -48,6 +50,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     num_seeds = v.parse().unwrap_or(1).max(1);
                     i += 1;
                 }
+            }
+            "--profile-layers" | "--breakdown" => {
+                profile_layers = true;
             }
             _ => {}
         }
@@ -118,6 +123,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut last_cpu_temp = None;
         let mut last_avg_power = 0.0;
 
+        let mut breakdown_accum = ForwardBreakdown::default();
+
         for seed_idx in 0..num_seeds {
             let seed = 42 + (seed_idx as u64) * 1000;
             let mut rng = DeterministicRng::new(seed);
@@ -127,7 +134,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Warmup (3 inferences)
             for _ in 0..3 {
-                let _ = model.decide(&tokens);
+                if profile_layers {
+                    let _ = model.decide_with_profile(&tokens);
+                } else {
+                    let _ = model.decide(&tokens);
+                }
             }
 
             let mut timings_ms = Vec::with_capacity(num_inferences);
@@ -135,10 +146,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for _ in 0..num_inferences {
                 let t0 = Instant::now();
-                let _ = model.decide(&tokens);
-                let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
-                timings_ms.push(elapsed_ms);
-                let _ = power.tick(elapsed_ms as u128, 0);
+                if profile_layers {
+                    let (_, bd) = model.decide_with_profile(&tokens);
+                    let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+                    timings_ms.push(elapsed_ms);
+                    let _ = power.tick(elapsed_ms as u128, 0);
+
+                    breakdown_accum.embedding_ms += bd.embedding_ms;
+                    if breakdown_accum.layer_ms.is_empty() {
+                        breakdown_accum.layer_ms = bd.layer_ms;
+                    } else {
+                        for (acc, l) in breakdown_accum.layer_ms.iter_mut().zip(bd.layer_ms.iter())
+                        {
+                            *acc += *l;
+                        }
+                    }
+                    breakdown_accum.pooling_ms += bd.pooling_ms;
+                    breakdown_accum.heads_ms += bd.heads_ms;
+                    breakdown_accum.total_ms += bd.total_ms;
+                } else {
+                    let _ = model.decide(&tokens);
+                    let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+                    timings_ms.push(elapsed_ms);
+                    let _ = power.tick(elapsed_ms as u128, 0);
+                }
             }
 
             let total_bench_ms = bench_start.elapsed().as_secs_f64() * 1000.0;
@@ -184,6 +215,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             name, last_params_len, avg_p50, avg_p95, avg_p99, avg_mean, avg_rss,
         );
 
+        let layer_breakdown = if profile_layers && num_inferences * num_seeds > 0 {
+            let total_inf = (num_inferences * num_seeds) as f64;
+            let avg_bd = ForwardBreakdown {
+                embedding_ms: breakdown_accum.embedding_ms / total_inf,
+                layer_ms: breakdown_accum
+                    .layer_ms
+                    .iter()
+                    .map(|ms| ms / total_inf)
+                    .collect(),
+                pooling_ms: breakdown_accum.pooling_ms / total_inf,
+                heads_ms: breakdown_accum.heads_ms / total_inf,
+                total_ms: breakdown_accum.total_ms / total_inf,
+            };
+
+            println!(
+                "\n  📊 Layer Breakdown for [{}] (Mean over inferences):",
+                name
+            );
+            println!("  +---------------------------+------------+------------+");
+            println!("  | Phase                     | Time (ms)  | Share (%)  |");
+            println!("  +---------------------------+------------+------------+");
+            let sum_measured = avg_bd.embedding_ms
+                + avg_bd.layer_ms.iter().sum::<f64>()
+                + avg_bd.pooling_ms
+                + avg_bd.heads_ms;
+            let total_for_pct = if sum_measured > 0.0 {
+                sum_measured
+            } else {
+                1.0
+            };
+
+            println!(
+                "  | {:<25} | {:>10.3} | {:>9.2}% |",
+                "Embedding",
+                avg_bd.embedding_ms,
+                (avg_bd.embedding_ms / total_for_pct) * 100.0
+            );
+            for (idx, l_ms) in avg_bd.layer_ms.iter().enumerate() {
+                println!(
+                    "  | {:<25} | {:>10.3} | {:>9.2}% |",
+                    format!("Transformer Layer {}", idx),
+                    l_ms,
+                    (l_ms / total_for_pct) * 100.0
+                );
+            }
+            println!(
+                "  | {:<25} | {:>10.3} | {:>9.2}% |",
+                "Mean Pooling & Final LN",
+                avg_bd.pooling_ms,
+                (avg_bd.pooling_ms / total_for_pct) * 100.0
+            );
+            println!(
+                "  | {:<25} | {:>10.3} | {:>9.2}% |",
+                "Decision Heads",
+                avg_bd.heads_ms,
+                (avg_bd.heads_ms / total_for_pct) * 100.0
+            );
+            println!("  +---------------------------+------------+------------+");
+            println!(
+                "  | {:<25} | {:>10.3} | {:>9.2}% |",
+                "Total Forward Measured", avg_bd.total_ms, 100.0
+            );
+            println!("  +---------------------------+------------+------------+\n");
+
+            Some(avg_bd)
+        } else {
+            None
+        };
+
         let rec = HardwareProfileRecord {
             model_name: "oniwa-decide".to_string(),
             config_type: name.to_string(),
@@ -204,6 +304,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             joules_per_inference: avg_joules,
             avg_power_watts: last_avg_power,
             thermal_celsius: last_cpu_temp,
+            layer_breakdown,
         };
         records.push(rec);
     }

@@ -21,9 +21,11 @@ pub mod simd;
 pub use dataset::{DatasetGenerator, DocCategory};
 pub use layers::quaternion_linear::QuaternionLinear;
 pub use loss::{LossCalculator, LossConfig};
-pub use model::{DecisionConfig, DecisionModel, RawDecision};
+pub use model::{DecisionConfig, DecisionModel, ForwardBreakdown, RawDecision};
 use oniwa_lm::tokenizer::CharTokenizer;
-pub use profiler::{HardwareProfileRecord, LatencyStats, MemoryProfile};
+pub use profiler::{
+    HardwareProfileRecord, LatencyStats, LayerPercentages, LayerProfileRecord, MemoryProfile,
+};
 pub use quaternion::Quaternion;
 pub use sensor::{SemanticSensor, StateEmbedding};
 use serde::{Deserialize, Serialize};
