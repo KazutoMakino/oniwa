@@ -15,6 +15,7 @@ pub mod mlm;
 pub mod model;
 pub mod profiler;
 pub mod quaternion;
+pub mod router;
 pub mod sensor;
 pub mod simd;
 
@@ -27,6 +28,7 @@ pub use profiler::{
     HardwareProfileRecord, LatencyStats, LayerPercentages, LayerProfileRecord, MemoryProfile,
 };
 pub use quaternion::Quaternion;
+pub use router::{AnomalyReport, CascadeRouter, ChoiceVerdict, RouterPolicy, RoutingDecision};
 pub use sensor::{SemanticSensor, StateEmbedding};
 use serde::{Deserialize, Serialize};
 pub use simd::*;

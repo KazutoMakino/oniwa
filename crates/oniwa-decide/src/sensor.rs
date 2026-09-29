@@ -9,7 +9,7 @@ use oniwa_lm::tokenizer::CharTokenizer;
 use serde::{Deserialize, Serialize};
 
 /// Compact state embedding output by `SemanticSensor`
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StateEmbedding {
     /// Context vector output by the encoder mean-pooling layer [dim]
     pub vector: Vec<f32>,
