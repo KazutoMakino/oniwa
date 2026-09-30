@@ -4,7 +4,7 @@
 //! similar to BERT / ModernBERT.
 //! Used in the decision model (System One) to capture whole-sequence context in a single pass.
 
-use crate::simd::dot_product_simd;
+use crate::simd::{dot_product_simd, max_element_simd, sum_slice_simd};
 
 pub struct Attention;
 
@@ -97,29 +97,25 @@ impl Attention {
                     let row_offset = att_offset + i * t;
 
                     // Compute inner product across all tokens j using SIMD
-                    let mut max_val = f32::NEG_INFINITY;
                     for j in 0..t {
                         let k_offset = ((bi * t + j) * num_heads + hi) * head_dim;
                         let k_vec = &act_k[k_offset..k_offset + head_dim];
 
                         let dot = dot_product_simd(q_vec, k_vec);
-                        let score = dot * scale;
-                        act_att[row_offset + j] = score;
-                        if score > max_val {
-                            max_val = score;
-                        }
+                        act_att[row_offset + j] = dot * scale;
                     }
 
+                    let row_slice = &mut act_att[row_offset..row_offset + t];
+                    let max_val = max_element_simd(row_slice);
+
                     // Softmax normalization across sequence
-                    let mut sum_exp = 0.0f32;
-                    for j in 0..t {
-                        let exp_v = (act_att[row_offset + j] - max_val).exp();
-                        act_att[row_offset + j] = exp_v;
-                        sum_exp += exp_v;
+                    for val in row_slice.iter_mut() {
+                        *val = (*val - max_val).exp();
                     }
+                    let sum_exp = sum_slice_simd(row_slice);
                     let inv_sum = 1.0f32 / sum_exp.max(1e-12);
-                    for j in 0..t {
-                        act_att[row_offset + j] *= inv_sum;
+                    for val in row_slice.iter_mut() {
+                        *val *= inv_sum;
                     }
 
                     // 4. Output = Att * V

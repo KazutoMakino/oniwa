@@ -15,6 +15,7 @@ use oniwa_decide::router::{CascadeRouter, RouterPolicy, RoutingDecision};
 use oniwa_decide::{DecisionConfig, DecisionEngine, DecisionModel};
 use oniwa_lm::reproducibility::DeterministicRng;
 use oniwa_lm::tokenizer::{BpeTokenizer, CharTokenizer, Tokenizer};
+use rayon::prelude::*;
 use serde::Serialize;
 use std::env;
 use std::fs;
@@ -406,82 +407,96 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cascade_router = CascadeRouter::new(RouterPolicy::default());
 
-    // ── Step 4: Scan each hunk ───────────────────────────────────────
+    // ── Step 4: Scan hunks in parallel (Rayon) ──────────────────────
+    let total_start = Instant::now();
+    let scan_results: Vec<_> = hunks
+        .par_iter()
+        .map(|hunk| {
+            let start = Instant::now();
+            let decision = engine.audit_text(&hunk.content);
+            let elapsed_ms = start.elapsed().as_millis();
+            let noul = decision.syntax_anomaly.value;
+            let noul_conf = decision.syntax_anomaly.confidence;
+            let score = decision.complexity.value;
+            let ent = entropy_bits(&decision.category.probabilities);
+
+            let routing_decision = if cli.router {
+                Some(cascade_router.route(&decision, None, Some(&hunk.file_path), hunk.is_code))
+            } else {
+                None
+            };
+
+            let (verdict, action_str) = if let Some(ref rd) = routing_decision {
+                match rd {
+                    RoutingDecision::Block { reason } => {
+                        ("BLOCK", format!("🚫 BLOCK ({})", reason.reason))
+                    }
+                    RoutingDecision::EscalateToSystemTwo { reason, .. } => {
+                        if hunk.is_code && noul && noul_conf >= BLOCK_CONFIDENCE_THRESHOLD {
+                            ("BLOCK", format!("🚫 BLOCK & Escalate ({})", reason))
+                        } else {
+                            ("ESCALATE", format!("⚡ ESCALATE System 2 ({})", reason))
+                        }
+                    }
+                    RoutingDecision::FastPath(verdict) => (
+                        "FAST_PATH",
+                        format!(
+                            "⚡ FAST_PATH ({:?}, conf={:.1}%)",
+                            verdict.category,
+                            verdict.confidence * 100.0
+                        ),
+                    ),
+                }
+            } else if hunk.is_code && noul && noul_conf >= BLOCK_CONFIDENCE_THRESHOLD {
+                ("BLOCK", "🚫 BLOCK".to_string())
+            } else if noul {
+                ("WARNING", "⚠️ WARNING".to_string())
+            } else {
+                ("PASS", "✅ PASS".to_string())
+            };
+
+            (
+                hunk, decision, elapsed_ms, noul, noul_conf, score, ent, verdict, action_str,
+            )
+        })
+        .collect();
+
+    let parallel_elapsed_ms = total_start.elapsed().as_millis();
     let mut blocked = false;
     let mut bench_records: Vec<BenchRecord> = Vec::new();
 
-    for (idx, hunk) in hunks.iter().enumerate() {
-        let start = Instant::now();
-        let decision = engine.audit_text(&hunk.content);
-        let elapsed_ms = start.elapsed().as_millis();
-
-        let noul = decision.syntax_anomaly.value;
-        let noul_conf = decision.syntax_anomaly.confidence;
-        let score = decision.complexity.value;
-        let ent = entropy_bits(&decision.category.probabilities);
-
-        let routing_decision = if cli.router {
-            Some(cascade_router.route(&decision, None, Some(&hunk.file_path), hunk.is_code))
-        } else {
-            None
-        };
-
-        let (verdict, action_str) = if let Some(ref rd) = routing_decision {
-            match rd {
-                RoutingDecision::Block { reason } => {
-                    blocked = true;
-                    ("BLOCK", format!("🚫 BLOCK ({})", reason.reason))
-                }
-                RoutingDecision::EscalateToSystemTwo { reason, .. } => {
-                    if cli.cascade {
-                        let sys2_prompt = EscalationPrompt {
-                            file_path: Some(hunk.file_path.clone()),
-                            reason: reason.clone(),
-                            context_entropy: ent,
-                            complexity_score: score,
-                            confidence: decision.category.confidence,
-                            diff_chunk: hunk.content.clone(),
-                        };
-                        let sys2_runner = System2CascadeRunner::new();
-                        let sys2_res = sys2_runner.run_escalation(&sys2_prompt);
-                        println!(
-                            "         [System 2 On-Demand] {} (took {}ms)",
-                            if sys2_res.success {
-                                "Handled"
-                            } else {
-                                "Failed"
-                            },
-                            sys2_res.duration_ms
-                        );
-                        if !sys2_res.output_text.is_empty() {
-                            println!("         [System 2 Verdict] {}", sys2_res.output_text);
-                        }
-                    }
-
-                    if hunk.is_code && noul && noul_conf >= BLOCK_CONFIDENCE_THRESHOLD {
-                        blocked = true;
-                        ("BLOCK", format!("🚫 BLOCK & Escalate ({})", reason))
-                    } else {
-                        ("ESCALATE", format!("⚡ ESCALATE System 2 ({})", reason))
-                    }
-                }
-                RoutingDecision::FastPath(verdict) => (
-                    "FAST_PATH",
-                    format!(
-                        "⚡ FAST_PATH ({:?}, conf={:.1}%)",
-                        verdict.category,
-                        verdict.confidence * 100.0
-                    ),
-                ),
-            }
-        } else if hunk.is_code && noul && noul_conf >= BLOCK_CONFIDENCE_THRESHOLD {
+    for (idx, (hunk, decision, elapsed_ms, noul, noul_conf, score, ent, verdict, action_str)) in
+        scan_results.into_iter().enumerate()
+    {
+        if verdict == "BLOCK" {
             blocked = true;
-            ("BLOCK", "🚫 BLOCK".to_string())
-        } else if noul {
-            ("WARNING", "⚠️ WARNING".to_string())
-        } else {
-            ("PASS", "✅ PASS".to_string())
-        };
+        }
+
+        // On-demand cascade execution if enabled and requested
+        if cli.cascade && verdict == "ESCALATE" {
+            let sys2_prompt = EscalationPrompt {
+                file_path: Some(hunk.file_path.clone()),
+                reason: action_str.clone(),
+                context_entropy: ent,
+                complexity_score: score,
+                confidence: decision.category.confidence,
+                diff_chunk: hunk.content.clone(),
+            };
+            let sys2_runner = System2CascadeRunner::new();
+            let sys2_res = sys2_runner.run_escalation(&sys2_prompt);
+            println!(
+                "         [System 2 On-Demand] {} (took {}ms)",
+                if sys2_res.success {
+                    "Handled"
+                } else {
+                    "Failed"
+                },
+                sys2_res.duration_ms
+            );
+            if !sys2_res.output_text.is_empty() {
+                println!("         [System 2 Verdict] {}", sys2_res.output_text);
+            }
+        }
 
         // Print per-hunk result
         let icon = match verdict {
@@ -527,6 +542,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 routing_action: if cli.router { Some(action_str) } else { None },
             });
         }
+    }
+
+    if hunks.len() > 1 {
+        println!(
+            "\n  ⚡ Parallel Scan Complete: {} hunks processed in {}ms total",
+            hunks.len(),
+            parallel_elapsed_ms
+        );
     }
 
     // ── Step 5: Write benchmark log ──────────────────────────────────
