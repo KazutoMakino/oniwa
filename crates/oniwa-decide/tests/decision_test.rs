@@ -870,3 +870,103 @@ fn test_forward_with_profile() {
     assert_eq!(dec_breakdown.layer_ms.len(), 2);
     assert_eq!(raw.choice_probs.len(), 4);
 }
+
+#[test]
+fn test_forward_inference_equivalence() {
+    for use_quat_head in [false, true] {
+        for use_quat_bb in [false, true] {
+            let config = DecisionConfig {
+                vocab_size: 64,
+                seq_len: 16,
+                dim: 32,
+                num_layers: 2,
+                num_heads: 2,
+                head_dim: 16,
+                ffn_dim: 64,
+                num_choices: 4,
+                temperature: 1.0,
+                use_quaternion_head: use_quat_head,
+                quaternion_backbone: use_quat_bb,
+                score_unit_interval: false,
+            };
+            let mut rng = DeterministicRng::new(101);
+            let model = DecisionModel::new(config, &mut rng);
+
+            let tokens: Vec<u16> = (0..16).map(|i| (i * 3 + 1) as u16).collect();
+            let b = 1;
+            let t = 16;
+
+            let cache = model.forward(&tokens, b, t);
+            let (pooled, choice_logits, noul_logits, score_preds) =
+                model.forward_inference(&tokens, b, t);
+
+            // 1. Verify pooled representations match (< 1e-5)
+            assert_eq!(pooled.len(), cache.pooled.len());
+            for (i, (&inf_v, &fwd_v)) in pooled.iter().zip(cache.pooled.iter()).enumerate() {
+                let diff = (inf_v - fwd_v).abs();
+                assert!(
+                    diff < 1e-5,
+                    "Pooled mismatch at idx {} for quat_head={} quat_bb={}: inf {} vs fwd {}",
+                    i,
+                    use_quat_head,
+                    use_quat_bb,
+                    inf_v,
+                    fwd_v
+                );
+            }
+
+            // 2. Verify Choice logits match (< 1e-5)
+            assert_eq!(choice_logits.len(), cache.choice_logits.len());
+            for (i, (&inf_v, &fwd_v)) in choice_logits
+                .iter()
+                .zip(cache.choice_logits.iter())
+                .enumerate()
+            {
+                let diff = (inf_v - fwd_v).abs();
+                assert!(
+                    diff < 1e-5,
+                    "Choice logit mismatch at idx {} for quat_head={} quat_bb={}: inf {} vs fwd {}",
+                    i,
+                    use_quat_head,
+                    use_quat_bb,
+                    inf_v,
+                    fwd_v
+                );
+            }
+
+            // 3. Verify Noul logits match (< 1e-5)
+            assert_eq!(noul_logits.len(), cache.noul_logits.len());
+            for (i, (&inf_v, &fwd_v)) in
+                noul_logits.iter().zip(cache.noul_logits.iter()).enumerate()
+            {
+                let diff = (inf_v - fwd_v).abs();
+                assert!(
+                    diff < 1e-5,
+                    "Noul logit mismatch at idx {} for quat_head={} quat_bb={}: inf {} vs fwd {}",
+                    i,
+                    use_quat_head,
+                    use_quat_bb,
+                    inf_v,
+                    fwd_v
+                );
+            }
+
+            // 4. Verify Score preds match (< 1e-5)
+            assert_eq!(score_preds.len(), cache.score_preds.len());
+            for (i, (&inf_v, &fwd_v)) in
+                score_preds.iter().zip(cache.score_preds.iter()).enumerate()
+            {
+                let diff = (inf_v - fwd_v).abs();
+                assert!(
+                    diff < 1e-5,
+                    "Score pred mismatch at idx {} for quat_head={} quat_bb={}: inf {} vs fwd {}",
+                    i,
+                    use_quat_head,
+                    use_quat_bb,
+                    inf_v,
+                    fwd_v
+                );
+            }
+        }
+    }
+}

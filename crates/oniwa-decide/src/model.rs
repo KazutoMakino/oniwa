@@ -11,7 +11,9 @@ use crate::layers::{
     Attention, QuaternionAttention, QuaternionLinear, QuaternionSwiGlu, RmsNorm, SwiGlu,
 };
 use crate::loss::LossCalculator;
-use crate::simd::{add_slices_assign_simd, dot_product_simd, scale_slice_simd};
+use crate::simd::{
+    accumulate_slice_simd, add_slices_assign_simd, dot_product_simd, scale_slice_simd,
+};
 use oniwa_lm::reproducibility::DeterministicRng;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -1253,19 +1255,256 @@ impl DecisionModel {
         }
     }
 
+    /// Dedicated fast inference pass:
+    /// - Skips MLM vocabulary projection completely
+    /// - Avoids allocating intermediate `LayerCache` activations
+    /// - Uses ARM NEON SIMD `accumulate_slice_simd` and `scale_slice_simd` for Mean Pooling
+    /// - Returns (pooled [B, C], choice_logits [B, num_choices], noul_logits [B], score_preds [B])
+    pub fn forward_inference(
+        &self,
+        tokens: &[u16],
+        b: usize,
+        t: usize,
+    ) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) {
+        let c = self.config.dim;
+        let n = b * t;
+        let nh = self.config.num_heads;
+        let ffn = self.config.ffn_dim;
+        let num_choices = self.config.num_choices;
+
+        // 1. Embedding
+        let mut cur = vec![0.0f32; n * c];
+        for i in 0..n {
+            let tok = tokens[i] as usize % self.config.vocab_size;
+            let wte_slice =
+                &self.params[self.offset_wte + tok * c..self.offset_wte + (tok + 1) * c];
+            cur[i * c..(i + 1) * c].copy_from_slice(wte_slice);
+        }
+
+        // Reusable working buffers per layer to avoid re-allocations
+        let mut x1 = vec![0.0f32; n * c];
+        let mut rstd1 = vec![0.0f32; n];
+        let mut act_q = vec![0.0f32; n * c];
+        let mut act_k = vec![0.0f32; n * c];
+        let mut act_v = vec![0.0f32; n * c];
+        let mut act_att = vec![0.0f32; b * nh * t * t];
+        let mut act_att_out = vec![0.0f32; n * c];
+        let mut attn_out = vec![0.0f32; n * c];
+
+        let mut x2 = vec![0.0f32; n * c];
+        let mut rstd2 = vec![0.0f32; n];
+        let mut act_g = vec![0.0f32; n * ffn];
+        let mut act_u = vec![0.0f32; n * ffn];
+        let mut act_h = vec![0.0f32; n * ffn];
+        let mut mlp_out = vec![0.0f32; n * c];
+
+        // 2. Transformer layers
+        for l in &self.offset_layers {
+            let gamma1 = &self.params[l.ln1_gamma..l.ln1_gamma + c];
+            RmsNorm::forward(&mut x1, &mut rstd1, &cur, gamma1, n, c, 1e-5);
+
+            if self.config.quaternion_backbone {
+                let in_quat = c / 4;
+                let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + 3 * in_quat * in_quat * 4];
+                let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + in_quat * in_quat * 4];
+                QuaternionAttention::forward(
+                    &mut attn_out,
+                    &mut act_q,
+                    &mut act_k,
+                    &mut act_v,
+                    &mut act_att,
+                    &mut act_att_out,
+                    &x1,
+                    w_qkv,
+                    w_proj,
+                    b,
+                    t,
+                    c,
+                    nh,
+                );
+            } else {
+                let w_qkv = &self.params[l.attn_w_qkv..l.attn_w_qkv + c * (3 * c)];
+                let w_proj = &self.params[l.attn_w_proj..l.attn_w_proj + c * c];
+                Attention::forward(
+                    &mut attn_out,
+                    &mut act_q,
+                    &mut act_k,
+                    &mut act_v,
+                    &mut act_att,
+                    &mut act_att_out,
+                    &x1,
+                    w_qkv,
+                    w_proj,
+                    b,
+                    t,
+                    c,
+                    nh,
+                );
+            }
+
+            // Residual connection 1: cur += attn_out
+            add_slices_assign_simd(&mut cur, &attn_out);
+
+            // LN2 + MLP
+            let gamma2 = &self.params[l.ln2_gamma..l.ln2_gamma + c];
+            RmsNorm::forward(&mut x2, &mut rstd2, &cur, gamma2, n, c, 1e-5);
+
+            if self.config.quaternion_backbone {
+                let in_quat = c / 4;
+                let ffn_quat = ffn / 4;
+                let w_gu =
+                    &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + 2 * ffn_quat * in_quat * 4];
+                let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + in_quat * ffn_quat * 4];
+                QuaternionSwiGlu::forward(
+                    &mut mlp_out,
+                    &mut act_g,
+                    &mut act_u,
+                    &mut act_h,
+                    &x2,
+                    w_gu,
+                    w_dn,
+                    n,
+                    c,
+                    ffn,
+                );
+            } else {
+                let w_gu = &self.params[l.mlp_w_gate_up..l.mlp_w_gate_up + c * (2 * ffn)];
+                let w_dn = &self.params[l.mlp_w_down..l.mlp_w_down + ffn * c];
+                SwiGlu::forward(
+                    &mut mlp_out,
+                    &mut act_g,
+                    &mut act_u,
+                    &mut act_h,
+                    &x2,
+                    w_gu,
+                    w_dn,
+                    n,
+                    c,
+                    ffn,
+                );
+            }
+
+            // Residual connection 2: cur += mlp_out
+            add_slices_assign_simd(&mut cur, &mlp_out);
+        }
+
+        // 3. Final LN
+        let mut norm_f_out = vec![0.0f32; n * c];
+        let mut rstd_f = vec![0.0f32; n];
+        let gamma_f = &self.params[self.offset_ln_f..self.offset_ln_f + c];
+        RmsNorm::forward(&mut norm_f_out, &mut rstd_f, &cur, gamma_f, n, c, 1e-5);
+
+        // 4. Mean Pooling with ARM NEON SIMD
+        let mut pooled = vec![0.0f32; b * c];
+        let inv_t = 1.0f32 / (t as f32);
+        for bi in 0..b {
+            let pool_slice = &mut pooled[bi * c..(bi + 1) * c];
+            for ti in 0..t {
+                let tok_slice = &norm_f_out[(bi * t + ti) * c..(bi * t + ti + 1) * c];
+                accumulate_slice_simd(pool_slice, tok_slice);
+            }
+            let pool_copy = pool_slice.to_vec();
+            scale_slice_simd(pool_slice, &pool_copy, inv_t);
+        }
+
+        // 5. Decision heads
+        let mut choice_logits = vec![0.0f32; b * num_choices];
+        let mut noul_logits = vec![0.0f32; b];
+        let mut score_preds = vec![0.0f32; b];
+
+        if self.config.use_quaternion_head {
+            let in_quat = c / 4;
+            let out_quat = 6;
+            let w_quat =
+                &self.params[self.offset_head_quat..self.offset_head_quat + out_quat * in_quat * 4];
+            let mut quat_head_out = vec![0.0f32; b * out_quat * 4];
+
+            QuaternionLinear::forward(
+                &mut quat_head_out,
+                &pooled,
+                w_quat,
+                None,
+                b,
+                in_quat,
+                out_quat,
+            );
+
+            for bi in 0..b {
+                let q_out_bi = &quat_head_out[bi * out_quat * 4..(bi + 1) * out_quat * 4];
+
+                for k in 0..num_choices {
+                    choice_logits[bi * num_choices + k] = q_out_bi[k * 4];
+                }
+
+                noul_logits[bi] = q_out_bi[4 * 4];
+
+                let s_dot = q_out_bi[5 * 4];
+                let tanh = (s_dot * 0.5).tanh();
+                score_preds[bi] = if self.config.score_unit_interval {
+                    0.5 + 0.5 * tanh
+                } else {
+                    3.0 + 2.0 * tanh
+                };
+            }
+        } else {
+            let w_hc =
+                &self.params[self.offset_head_choice..self.offset_head_choice + c * num_choices];
+            let w_hn = &self.params[self.offset_head_noul..self.offset_head_noul + c];
+            let w_hs = &self.params[self.offset_head_score..self.offset_head_score + c];
+
+            for bi in 0..b {
+                let h = &pooled[bi * c..(bi + 1) * c];
+
+                // Choice Head
+                for k in 0..num_choices {
+                    let mut dot = 0.0f32;
+                    for j in 0..c {
+                        dot += h[j] * w_hc[j * num_choices + k];
+                    }
+                    choice_logits[bi * num_choices + k] = dot;
+                }
+
+                // Noul Head
+                noul_logits[bi] = dot_product_simd(h, w_hn);
+
+                // Score Head
+                let dot_s = dot_product_simd(h, w_hs);
+                let tanh = (dot_s * 0.5).tanh();
+                score_preds[bi] = if self.config.score_unit_interval {
+                    0.5 + 0.5 * tanh
+                } else {
+                    3.0 + 2.0 * tanh
+                };
+            }
+        }
+
+        (pooled, choice_logits, noul_logits, score_preds)
+    }
+
     /// Run inference on a single sequence (execute decision)
     pub fn decide(&self, tokens: &[u16]) -> RawDecision {
         let b = 1;
-        let t = tokens.len().min(self.config.seq_len);
-        let mut padded = vec![0u16; self.config.seq_len];
-        padded[..t].copy_from_slice(&tokens[..t]);
+        // Adaptive sequence length: align token length to nearest multiple of 4, with min 4, max seq_len
+        let raw_len = tokens.len();
+        let t_clamped = raw_len.min(self.config.seq_len);
+        let t_aligned = if t_clamped <= 4 {
+            4
+        } else {
+            t_clamped.div_ceil(4) * 4
+        }
+        .min(self.config.seq_len);
 
-        let cache = self.forward(&padded, b, self.config.seq_len);
+        let mut padded = vec![0u16; t_aligned];
+        let copy_len = raw_len.min(t_aligned);
+        padded[..copy_len].copy_from_slice(&tokens[..copy_len]);
+
+        let (_pooled, choice_logits, noul_logits, score_preds) =
+            self.forward_inference(&padded, b, t_aligned);
 
         // Compute Choice (Softmax with temperature)
         let num_choices = self.config.num_choices;
         let choice_probs =
-            LossCalculator::softmax(&cache.choice_logits[..num_choices], self.config.temperature);
+            LossCalculator::softmax(&choice_logits[..num_choices], self.config.temperature);
         let mut best_choice = 0;
         let mut max_p = 0.0f32;
         for (k, &p) in choice_probs.iter().enumerate() {
@@ -1277,17 +1516,17 @@ impl DecisionModel {
         let choice_conf = max_p;
 
         // Compute Noul
-        let noul_p = LossCalculator::sigmoid(cache.noul_logits[0]);
+        let noul_p = LossCalculator::sigmoid(noul_logits[0]);
         let noul_val = noul_p >= 0.5;
         let noul_conf = (noul_p - 0.5).abs() * 2.0;
 
         // Compute Score
         let (score_val, score_conf) = if self.config.score_unit_interval {
-            let val = cache.score_preds[0].clamp(0.0, 1.0);
+            let val = score_preds[0].clamp(0.0, 1.0);
             let conf = 1.0 - (val - 0.5).abs() * 0.4;
             (val, conf)
         } else {
-            let val = cache.score_preds[0].clamp(1.0, 5.0);
+            let val = score_preds[0].clamp(1.0, 5.0);
             let conf = 1.0 - ((val - 3.0).abs() / 2.0) * 0.2; // Stability confidence
             (val, conf)
         };

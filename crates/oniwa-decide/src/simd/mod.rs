@@ -200,4 +200,27 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_accumulate_slice_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 29, 64] {
+            let mut acc: Vec<f32> = (0..len).map(|i| (i as f32) * 0.25 - 0.5).collect();
+            let x: Vec<f32> = (0..len).map(|i| (i as f32) * -0.3 + 1.2).collect();
+            let acc_ref: Vec<f32> = acc.iter().zip(x.iter()).map(|(&a, &b)| a + b).collect();
+
+            accumulate_slice_simd(&mut acc, &x);
+
+            for i in 0..len {
+                let diff = (acc[i] - acc_ref[i]).abs();
+                assert!(
+                    diff < 1e-6,
+                    "Failed at index {} for length {}: acc {} vs ref {}",
+                    i,
+                    len,
+                    acc[i],
+                    acc_ref[i]
+                );
+            }
+        }
+    }
 }
