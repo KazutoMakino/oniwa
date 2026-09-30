@@ -738,7 +738,21 @@ impl DecisionModel {
         let gamma_f = &self.params[self.offset_ln_f..self.offset_ln_f + c];
         RmsNorm::forward(&mut norm_f_out, &mut rstd_f, &cur, gamma_f, n, c, 1e-5);
 
-        // Tied MLM projection: each token state is scored against the input embedding table.
+        // Mean Pooling: pooled [B, C]
+        let mut pooled = vec![0.0f32; b * c];
+        let inv_t = 1.0f32 / (t as f32);
+        for bi in 0..b {
+            let pool_slice = &mut pooled[bi * c..(bi + 1) * c];
+            for ti in 0..t {
+                let tok_slice = &norm_f_out[(bi * t + ti) * c..(bi * t + ti + 1) * c];
+                accumulate_slice_simd(pool_slice, tok_slice);
+            }
+            let pool_copy = pool_slice.to_vec();
+            scale_slice_simd(pool_slice, &pool_copy, inv_t);
+        }
+        let pooling_ms = pool_start.elapsed().as_secs_f64() * 1000.0;
+
+        // Tied MLM projection: only if needed (for full cache parity)
         let mut mlm_logits = vec![0.0f32; n * vocab_size];
         for position in 0..n {
             let h = &norm_f_out[position * c..(position + 1) * c];
@@ -748,20 +762,6 @@ impl DecisionModel {
                 mlm_logits[position * vocab_size + token] = dot_product_simd(h, w);
             }
         }
-
-        // Mean Pooling: pooled [B, C]
-        let mut pooled = vec![0.0f32; b * c];
-        let inv_t = 1.0f32 / (t as f32);
-        for bi in 0..b {
-            let pool_slice = &mut pooled[bi * c..(bi + 1) * c];
-            for ti in 0..t {
-                let tok_slice = &norm_f_out[(bi * t + ti) * c..(bi * t + ti + 1) * c];
-                add_slices_assign_simd(pool_slice, tok_slice);
-            }
-            let pool_copy = pool_slice.to_vec();
-            scale_slice_simd(pool_slice, &pool_copy, inv_t);
-        }
-        let pooling_ms = pool_start.elapsed().as_secs_f64() * 1000.0;
 
         // 4. Decision heads
         let heads_start = Instant::now();
@@ -1546,11 +1546,21 @@ impl DecisionModel {
     /// Run inference on a single sequence with layer-by-layer profiling breakdown
     pub fn decide_with_profile(&self, tokens: &[u16]) -> (RawDecision, ForwardBreakdown) {
         let b = 1;
-        let t = tokens.len().min(self.config.seq_len);
-        let mut padded = vec![0u16; self.config.seq_len];
-        padded[..t].copy_from_slice(&tokens[..t]);
+        // Adaptive sequence length: align token length to nearest multiple of 4, with min 4, max seq_len
+        let raw_len = tokens.len();
+        let t_clamped = raw_len.min(self.config.seq_len);
+        let t_aligned = if t_clamped <= 4 {
+            4
+        } else {
+            t_clamped.div_ceil(4) * 4
+        }
+        .min(self.config.seq_len);
 
-        let (cache, breakdown) = self.forward_with_profile(&padded, b, self.config.seq_len);
+        let mut padded = vec![0u16; t_aligned];
+        let copy_len = raw_len.min(t_aligned);
+        padded[..copy_len].copy_from_slice(&tokens[..copy_len]);
+
+        let (cache, breakdown) = self.forward_with_profile(&padded, b, t_aligned);
 
         // Compute Choice (Softmax with temperature)
         let num_choices = self.config.num_choices;
