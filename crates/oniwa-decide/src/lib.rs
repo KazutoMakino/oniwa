@@ -7,6 +7,8 @@
 //! and outputs directly executable typed decisions and calibrated confidence values,
 //! without requiring free-form autoregressive text generation.
 
+pub mod cascade;
+pub mod config;
 pub mod dataset;
 pub mod layers;
 pub mod loss;
@@ -19,10 +21,12 @@ pub mod router;
 pub mod sensor;
 pub mod simd;
 
+pub use cascade::{EscalationPrompt, System2CascadeRunner, System2Result};
+pub use config::DecisionConfig;
 pub use dataset::{DatasetGenerator, DocCategory};
 pub use layers::quaternion_linear::QuaternionLinear;
 pub use loss::{LossCalculator, LossConfig};
-pub use model::{DecisionConfig, DecisionModel, ForwardBreakdown, RawDecision};
+pub use model::{DecisionModel, ForwardBreakdown, RawDecision};
 use oniwa_lm::tokenizer::CharTokenizer;
 pub use profiler::{
     HardwareProfileRecord, LatencyStats, LayerPercentages, LayerProfileRecord, MemoryProfile,

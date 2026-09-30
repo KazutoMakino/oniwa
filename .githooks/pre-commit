@@ -5,6 +5,18 @@ set -euo pipefail
 staged_rs_files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.rs$' || true)
 staged_rust_code=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(\.rs$|Cargo\.toml$|Cargo\.lock$)' || true)
 
+# Check emergency bypass environment variable
+if [ "${ONIWA_BYPASS:-0}" = "1" ] || [ "${ONIWA_BYPASS:-false}" = "true" ]; then
+    echo "🌿 [oniwa pre-commit] ONIWA_BYPASS detected: skipping pre-commit verification."
+    exit 0
+fi
+
+# Run System 1 Gatekeeper if there are staged code changes
+if [ -n "$staged_rust_code" ]; then
+    echo "🌿 [oniwa pre-commit] Running System 1 Gatekeeper (oniwa-decide)..."
+    cargo run --quiet -p oniwa-decide --bin gatekeeper -- --router
+fi
+
 if [ -n "$staged_rs_files" ]; then
     echo "🌿 [oniwa pre-commit] Formatting Rust files (cargo fmt)..."
     cargo fmt --all

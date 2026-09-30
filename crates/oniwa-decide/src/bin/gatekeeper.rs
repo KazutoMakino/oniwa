@@ -10,6 +10,7 @@
 //! # Benchmark mode (`--bench`)
 //! Logs per-hunk results to `logs/benchmarks/gatekeeper_eval.jsonl`
 
+use oniwa_decide::cascade::{EscalationPrompt, System2CascadeRunner};
 use oniwa_decide::router::{CascadeRouter, RouterPolicy, RoutingDecision};
 use oniwa_decide::{DecisionConfig, DecisionEngine, DecisionModel};
 use oniwa_lm::reproducibility::DeterministicRng;
@@ -42,6 +43,7 @@ struct CliArgs {
     help: bool,
     stdin_mode: bool,
     router: bool,
+    cascade: bool,
 }
 
 fn parse_args() -> CliArgs {
@@ -52,12 +54,14 @@ fn parse_args() -> CliArgs {
         help: false,
         stdin_mode: false,
         router: false,
+        cascade: false,
     };
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--bench" => cli.bench = true,
             "--router" => cli.router = true,
+            "--cascade" => cli.cascade = true,
             "--checkpoint" => {
                 if let Some(v) = args.get(i + 1) {
                     cli.checkpoint = Some(v.clone());
@@ -84,6 +88,7 @@ fn print_help() {
     println!(
         "  --router       Enable cascade hybrid router (FastPath, Block, EscalateToSystemTwo)"
     );
+    println!("  --cascade      Enable on-demand System 2 escalation pipeline execution");
     println!("  --checkpoint   Path to checkpoint directory (default: auto-detect)");
     println!("  --stdin        Read diff from stdin instead of `git diff --cached`");
     println!("  -h, --help     Show this help message");
@@ -279,6 +284,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Check emergency bypass environment variable
+    if std::env::var("ONIWA_BYPASS")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        println!("============================================================");
+        println!(" 🌿 ONIWA Gatekeeper: BYPASS ACTIVATED (ONIWA_BYPASS=1)");
+        println!("    Skipping Gatekeeper validation and proceeding.");
+        println!("============================================================");
+        std::process::exit(0);
+    }
+
     println!("============================================================");
     println!(" 🚧 ONIWA Gatekeeper: Standalone Gate-keeping Engine");
     println!("    Pure Rust · Offline · Sub-millisecond Inference");
@@ -412,6 +429,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ("BLOCK", format!("🚫 BLOCK ({})", reason.reason))
                 }
                 RoutingDecision::EscalateToSystemTwo { reason, .. } => {
+                    if cli.cascade {
+                        let sys2_prompt = EscalationPrompt {
+                            file_path: Some(hunk.file_path.clone()),
+                            reason: reason.clone(),
+                            context_entropy: ent,
+                            complexity_score: score,
+                            confidence: decision.category.confidence,
+                            diff_chunk: hunk.content.clone(),
+                        };
+                        let sys2_runner = System2CascadeRunner::new();
+                        let sys2_res = sys2_runner.run_escalation(&sys2_prompt);
+                        println!(
+                            "         [System 2 On-Demand] {} (took {}ms)",
+                            if sys2_res.success {
+                                "Handled"
+                            } else {
+                                "Failed"
+                            },
+                            sys2_res.duration_ms
+                        );
+                        if !sys2_res.output_text.is_empty() {
+                            println!("         [System 2 Verdict] {}", sys2_res.output_text);
+                        }
+                    }
+
                     if hunk.is_code && noul && noul_conf >= BLOCK_CONFIDENCE_THRESHOLD {
                         blocked = true;
                         ("BLOCK", format!("🚫 BLOCK & Escalate ({})", reason))
@@ -509,7 +551,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n============================================================");
     if blocked {
         println!(" 🚫 BLOCKED: Code anomaly detected with high confidence.");
-        println!("    Fix the flagged issues and re-stage.");
+        println!("    System 1 identified potential syntax corruption or severe defects.");
+        println!();
+        println!(" 💡 How to proceed:");
+        println!("    1. Review the flagged hunk(s) above and fix syntax issues, then re-stage:");
+        println!("       git add <file>");
+        println!("    2. If this is an intended change or false positive, bypass via:");
+        println!("       git commit --no-verify");
+        println!("       or:");
+        println!("       ONIWA_BYPASS=1 git commit");
         println!("============================================================");
         std::process::exit(1);
     } else {

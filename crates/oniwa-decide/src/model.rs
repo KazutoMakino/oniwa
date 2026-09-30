@@ -6,6 +6,7 @@
 //! - Three decision heads (ChoiceHead, NoulHead, ScoreHead)
 //! - Outputs type-safe decisions in a single forward pass
 
+pub use crate::config::DecisionConfig;
 use crate::layers::{
     Attention, QuaternionAttention, QuaternionLinear, QuaternionSwiGlu, RmsNorm, SwiGlu,
 };
@@ -14,129 +15,6 @@ use crate::simd::{add_slices_assign_simd, dot_product_simd, scale_slice_simd};
 use oniwa_lm::reproducibility::DeterministicRng;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DecisionConfig {
-    pub vocab_size: usize,
-    pub seq_len: usize,
-    pub dim: usize,
-    pub num_layers: usize,
-    pub num_heads: usize,
-    pub head_dim: usize,
-    pub ffn_dim: usize,
-    pub num_choices: usize,
-    #[serde(default = "default_temperature")]
-    pub temperature: f32,
-    #[serde(default = "default_use_quaternion_head")]
-    pub use_quaternion_head: bool,
-    #[serde(default = "default_quaternion_backbone")]
-    pub quaternion_backbone: bool,
-    #[serde(default)]
-    pub score_unit_interval: bool,
-}
-
-fn default_use_quaternion_head() -> bool {
-    false
-}
-
-fn default_quaternion_backbone() -> bool {
-    false
-}
-
-fn default_temperature() -> f32 {
-    1.0
-}
-
-impl Default for DecisionConfig {
-    fn default() -> Self {
-        Self {
-            vocab_size: 4721,
-            seq_len: 128,
-            dim: 128,
-            num_layers: 4,
-            num_heads: 4,
-            head_dim: 32,
-            ffn_dim: 256,
-            num_choices: 4,
-            temperature: 1.0,
-            use_quaternion_head: false,
-            quaternion_backbone: false,
-            score_unit_interval: false,
-        }
-    }
-}
-
-impl DecisionConfig {
-    /// System 1 target: V=4096, d_model=256, T=128, B=4 fits the 100 MiB budget.
-    pub fn system1_mlm() -> Self {
-        Self {
-            vocab_size: 4_096,
-            seq_len: 128,
-            dim: 256,
-            num_layers: 4,
-            num_heads: 4,
-            head_dim: 64,
-            ffn_dim: 1_024,
-            num_choices: 4,
-            temperature: 1.0,
-            use_quaternion_head: true,
-            quaternion_backbone: true,
-            score_unit_interval: true,
-        }
-    }
-    /// Standard baseline configuration (~1.26M parameters)
-    pub fn standard_baseline(vocab_size: usize) -> Self {
-        Self {
-            vocab_size,
-            use_quaternion_head: false,
-            quaternion_backbone: false,
-            score_unit_interval: false,
-            ..Default::default()
-        }
-    }
-
-    /// Quaternion head configuration (~1.26M parameters with 4x compressed head)
-    pub fn quaternion_head(vocab_size: usize) -> Self {
-        Self {
-            vocab_size,
-            use_quaternion_head: true,
-            quaternion_backbone: false,
-            score_unit_interval: false,
-            ..Default::default()
-        }
-    }
-
-    /// Full Quaternion Transformer configuration (~315K parameters)
-    /// Both backbone (Attention + SwiGLU) and decision head operate in quaternion space.
-    pub fn full_quaternion_transformer(vocab_size: usize) -> Self {
-        Self {
-            vocab_size,
-            use_quaternion_head: true,
-            quaternion_backbone: true,
-            score_unit_interval: false,
-            ..Default::default()
-        }
-    }
-
-    /// Iso-parameter configuration (~315K parameters matching Full Q-Transformer scale)
-    /// Shrinks hidden dimension from 128 to 64, head_dim from 32 to 16, and ffn_dim from 256 to 128
-    pub fn iso_parameter(vocab_size: usize) -> Self {
-        Self {
-            vocab_size,
-            seq_len: 128,
-            dim: 64,
-            num_layers: 4,
-            num_heads: 4,
-            head_dim: 16,
-            ffn_dim: 128,
-            num_choices: 4,
-            temperature: 1.0,
-            use_quaternion_head: false,
-            quaternion_backbone: false,
-            score_unit_interval: false,
-        }
-    }
-}
 
 /// Decision output for a single sample
 #[derive(Clone, Debug, Serialize, Deserialize)]
