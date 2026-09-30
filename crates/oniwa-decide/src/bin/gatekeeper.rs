@@ -235,10 +235,14 @@ fn build_hunk_content(added: &[String], context: &[String]) -> String {
         }
     }
 
-    // Truncate to MAX_HUNK_TOKENS * 4 chars
+    // Truncate to MAX_HUNK_TOKENS * 4 bytes safely on UTF-8 char boundaries
     let mut result = parts.join("\n");
     if result.len() > target_chars {
-        result.truncate(target_chars);
+        let mut boundary = target_chars;
+        while boundary > 0 && !result.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        result.truncate(boundary);
     }
     result
 }
