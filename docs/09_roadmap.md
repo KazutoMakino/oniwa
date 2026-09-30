@@ -211,12 +211,12 @@ flowchart TB
 
 - [x] Run comprehensive benchmarks:
 
-| Configuration | Parameters | Inference Latency | RSS | J/inference | Loss | Accuracy |
+| Configuration | Parameters | Inference Latency (p50 / mean) | RSS | J/inference | Loss | Accuracy |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Standard (Full Real) | 1,261,568 | 503.98 ms | 11.6 MB | 1.762 J | 0.8680 | 100.0% |
-| Q-Head Only | 1,261,568 | 503.43 ms | 12.2 MB | 1.760 J | 0.8798 | 100.0% |
-| **Full Q-Transformer** | **770,048** | **125.66 ms** | **10.3 MB** | **0.438 J** | **0.9542** | **100.0%** |
-| Iso-parameter Real | 466,944 | 121.71 ms | 11.3 MB | 0.424 J | 0.9821 | 87.5% |
+| Standard (Full Real) | 1,261,568 | 255.62 ms / 267.65 ms | 8.2 MB | 0.935 J | 0.8680 | 100.0% |
+| Q-Head Only | 1,261,568 | 253.18 ms / 264.95 ms | 8.3 MB | 0.926 J | 0.8798 | 100.0% |
+| **Full Q-Transformer** | **770,048** | **40.27 ms / 40.70 ms** | **6.4 MB** | **0.140 J** | **0.9542** | **100.0%** |
+| Iso-parameter Real | 466,944 | 54.66 ms / 56.79 ms | 9.2 MB | 0.197 J | 0.9821 | 87.5% |
 
 - [x] Report all figures as 5-seed mean ± standard error
 - [x] RPi4 thermal profile: temperature trajectory during sustained inference
