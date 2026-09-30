@@ -10,7 +10,7 @@
 
 use crate::layers::Attention;
 use crate::layers::QuaternionLinear;
-use crate::simd::dot_product_simd;
+use crate::simd::{dot_product_simd, max_element_simd, sum_slice_simd};
 
 pub struct QuaternionAttention;
 
@@ -69,30 +69,26 @@ impl QuaternionAttention {
 
                     let q_vec = &act_q[q_offset..q_offset + head_dim];
 
-                    let mut max_val = f32::NEG_INFINITY;
                     for j in 0..t {
                         let k_offset = ((bi * t + j) * num_heads + hi) * head_dim;
                         let k_vec = &act_k[k_offset..k_offset + head_dim];
 
                         // Quaternion inner product: sum_k Re(q_k ⊗ k_k*) = sum_k dot(q_k, k_k) = dot_product_simd(q_vec, k_vec)
                         let dot = dot_product_simd(q_vec, k_vec);
-                        let score = dot * scale;
-                        act_att[row_offset + j] = score;
-                        if score > max_val {
-                            max_val = score;
-                        }
+                        act_att[row_offset + j] = dot * scale;
                     }
 
+                    let row_slice = &mut act_att[row_offset..row_offset + t];
+                    let max_val = max_element_simd(row_slice);
+
                     // Softmax normalization across sequence
-                    let mut sum_exp = 0.0f32;
-                    for j in 0..t {
-                        let exp_v = (act_att[row_offset + j] - max_val).exp();
-                        act_att[row_offset + j] = exp_v;
-                        sum_exp += exp_v;
+                    for val in row_slice.iter_mut() {
+                        *val = (*val - max_val).exp();
                     }
+                    let sum_exp = sum_slice_simd(row_slice);
                     let inv_sum = 1.0f32 / sum_exp.max(1e-12);
-                    for j in 0..t {
-                        act_att[row_offset + j] *= inv_sum;
+                    for val in row_slice.iter_mut() {
+                        *val *= inv_sum;
                     }
 
                     // 4. Output = Att * V

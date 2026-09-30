@@ -349,6 +349,64 @@ pub fn accumulate_slice_simd(acc: &mut [f32], x: &[f32]) {
     add_slices_assign_simd(acc, x);
 }
 
+/// Find maximum element in slice: `\max x[i]`
+#[inline(always)]
+pub fn max_element_simd(x: &[f32]) -> f32 {
+    if x.is_empty() {
+        return f32::NEG_INFINITY;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let (chunks, rem) = x.as_chunks::<4>();
+        let mut vmax = vdupq_n_f32(f32::NEG_INFINITY);
+        for chunk in chunks {
+            let vx = vld1q_f32(chunk.as_ptr());
+            vmax = vmaxq_f32(vmax, vx);
+        }
+        let mut max_val = vmaxvq_f32(vmax);
+        for &val in rem {
+            if val > max_val {
+                max_val = val;
+            }
+        }
+        max_val
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let mut max_val = f32::NEG_INFINITY;
+        for &val in x {
+            if val > max_val {
+                max_val = val;
+            }
+        }
+        max_val
+    }
+}
+
+/// Sum of elements in a slice: `\sum x[i]`
+#[inline(always)]
+pub fn sum_slice_simd(x: &[f32]) -> f32 {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let (chunks, rem) = x.as_chunks::<4>();
+        let mut vacc = vdupq_n_f32(0.0);
+        for chunk in chunks {
+            let vx = vld1q_f32(chunk.as_ptr());
+            vacc = vaddq_f32(vacc, vx);
+        }
+        let mut sum = vaddvq_f32(vacc);
+        for &val in rem {
+            sum += val;
+        }
+        sum
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        x.iter().sum::<f32>()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -567,6 +625,45 @@ mod tests {
                     acc_ref[i]
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_max_element_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 29, 64] {
+            let input: Vec<f32> = (0..len).map(|i| (i as f32) * 0.15 - 2.5).collect();
+            let mut ref_max = f32::NEG_INFINITY;
+            for &v in &input {
+                if v > ref_max {
+                    ref_max = v;
+                }
+            }
+            let simd_max = max_element_simd(&input);
+            assert!(
+                (simd_max - ref_max).abs() < 1e-6
+                    || (simd_max.is_infinite() && ref_max.is_infinite()),
+                "Failed for len {}: simd {} vs ref {}",
+                len,
+                simd_max,
+                ref_max
+            );
+        }
+    }
+
+    #[test]
+    fn test_sum_slice_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 29, 64] {
+            let input: Vec<f32> = (0..len).map(|i| (i as f32) * 0.25 - 1.5).collect();
+            let ref_sum = input.iter().sum::<f32>();
+            let simd_sum = sum_slice_simd(&input);
+            let diff = (simd_sum - ref_sum).abs();
+            assert!(
+                diff < 1e-5 || diff / ref_sum.abs().max(1.0) < 1e-5,
+                "Failed for len {}: simd {} vs ref {}",
+                len,
+                simd_sum,
+                ref_sum
+            );
         }
     }
 }

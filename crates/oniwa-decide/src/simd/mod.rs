@@ -223,4 +223,43 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_max_element_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 29, 64] {
+            let input: Vec<f32> = (0..len).map(|i| (i as f32) * 0.15 - 2.5).collect();
+            let mut ref_max = f32::NEG_INFINITY;
+            for &v in &input {
+                if v > ref_max {
+                    ref_max = v;
+                }
+            }
+            let simd_max = max_element_simd(&input);
+            assert!(
+                (simd_max - ref_max).abs() < 1e-6
+                    || (simd_max.is_infinite() && ref_max.is_infinite()),
+                "Failed for len {}: simd {} vs ref {}",
+                len,
+                simd_max,
+                ref_max
+            );
+        }
+    }
+
+    #[test]
+    fn test_sum_slice_simd_equivalence() {
+        for len in [0, 1, 3, 4, 7, 16, 29, 64] {
+            let input: Vec<f32> = (0..len).map(|i| (i as f32) * 0.25 - 1.5).collect();
+            let ref_sum = input.iter().sum::<f32>();
+            let simd_sum = sum_slice_simd(&input);
+            let diff = (simd_sum - ref_sum).abs();
+            assert!(
+                diff < 1e-5 || diff / ref_sum.abs().max(1.0) < 1e-5,
+                "Failed for len {}: simd {} vs ref {}",
+                len,
+                simd_sum,
+                ref_sum
+            );
+        }
+    }
 }
