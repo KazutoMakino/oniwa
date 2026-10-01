@@ -1,0 +1,77 @@
+\documentclass[11pt,a4paper]{article}
+
+% --- Essential Packages for arXiv Preprint ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{cite}
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=blue
+}
+
+\title{\textbf{ONIWA: Organic Non-datacenter Intelligence Without Abuse}\\
+\large Cultivating Autonomous Intelligence with 100\% Provenance-Audited Data on Edge Hardware}
+
+\author{
+  Kazuto Makino \\
+  \texttt{kazuto.makino@example.com} % Replace with your preferred contact
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Current scaling paradigms in Large Language Models (LLMs) rely heavily on massive GPU clusters and non-consensual web scraping. In this paper, we introduce \textbf{ONIWA} (Organic Non-datacenter Intelligence Without Abuse), a project dedicated to cultivating autonomous language intelligence implemented purely in Rust, operating entirely on low-power edge hardware (such as Raspberry Pi 4). ONIWA achieves 100\% provenance and auditability through an immutable ledger index, tracking every training token and weight checksum, while rejecting opaque dependencies. We present the architectural design, thermal-aware edge training dynamics, and empirical evaluation of sustainable, transparent machine learning.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+Modern machine learning models face dual crises: exorbitant energy consumption in centralized data centers and severe provenance/ethical ambiguities in training corpora.
+
+\section{Related Work}
+\label{sec:related}
+% Prior work on edge LLM inference, green AI, and provenance tracking.
+
+\section{System Architecture}
+\label{sec:architecture}
+ONIWA is implemented from scratch in pure Rust without external deep learning frameworks (e.g., PyTorch, CUDA).
+\subsection{Pure Rust Transformer Implementation}
+\subsection{Thermal and Power Telemetry}
+\subsection{Ledger Auditability and Provenance}
+
+\section{Experimental Setup}
+\label{sec:experiments}
+\subsection{Hardware Specifications}
+\subsection{Clean Dataset Curation}
+\subsection{Training Dynamics}
+
+\section{Results and Discussion}
+\label{sec:results}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
