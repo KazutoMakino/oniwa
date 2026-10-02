@@ -6,6 +6,7 @@
 
 <p align="left">
   <a href="https://github.com/KazutoMakino/oniwa/actions/workflows/ci.yml"><img src="https://github.com/KazutoMakino/oniwa/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI Status"></a>
+  <a href="https://doi.org/10.5281/zenodo.23107563"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.23107563.svg" alt="DOI"></a>
   <img src="https://img.shields.io/badge/language-Rust-DEA584.svg?logo=rust&logoColor=white&style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
@@ -34,15 +35,16 @@ If you use or reference ONIWA in your academic research, please cite our paper:
 
 > **"Organic Non-Datacenter Intelligence: A Pure-Rust Full Quaternion Transformer for Edge Decision-Making via Irreversible Lossy Compression"**  
 > **Author:** Kazuto Makino (*Independent Researcher, Aichi, Japan*)  
-> **Preprint:** [paper/oniwa-quaternion-transformer.pdf](paper/oniwa-quaternion-transformer.pdf) | **LaTeX Source:** [paper/](paper/)
+> **DOI:** [10.5281/zenodo.23107563](https://doi.org/10.5281/zenodo.23107563) | **Preprint:** [paper/oniwa-quaternion-transformer.pdf](paper/oniwa-quaternion-transformer.pdf) | **LaTeX Source:** [paper/](paper/)
 
 ```bibtex
 @article{makino2026oniwa,
   title={Organic Non-Datacenter Intelligence: A Pure-Rust Full Quaternion Transformer for Edge Decision-Making via Irreversible Lossy Compression},
   author={Makino, Kazuto},
-  journal={arXiv preprint},
+  journal={Zenodo Preprint},
   year={2026},
-  url={https://github.com/KazutoMakino/oniwa}
+  doi={10.5281/zenodo.23107563},
+  url={https://doi.org/10.5281/zenodo.23107563}
 }
 ```
 
