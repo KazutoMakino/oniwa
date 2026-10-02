@@ -28,6 +28,32 @@ For official specifications and system integration milestones, refer to the prim
 
 ---
 
+## 📜 Research Paper & Citation
+
+If you use or reference ONIWA in your academic research, please cite our paper:
+
+> **"Organic Non-Datacenter Intelligence: A Pure-Rust Full Quaternion Transformer for Edge Decision-Making via Irreversible Lossy Compression"**  
+> **Author:** Kazuto Makino (*Independent Researcher, Aichi, Japan*)  
+> **Preprint:** [paper/main.pdf](paper/main.pdf) | **LaTeX Source:** [paper/](paper/)
+
+```bibtex
+@article{makino2026oniwa,
+  title={Organic Non-Datacenter Intelligence: A Pure-Rust Full Quaternion Transformer for Edge Decision-Making via Irreversible Lossy Compression},
+  author={Makino, Kazuto},
+  journal={arXiv preprint},
+  year={2026},
+  url={https://github.com/KazutoMakino/oniwa}
+}
+```
+
+To build or inspect the paper TeX source locally:
+```bash
+cd paper && make        # Compile 13-page PDF
+make arxiv              # Bundle clean arXiv submission package (oniwa-paper-arxiv.tar.gz)
+```
+
+---
+
 ## Vision: Three Wheels and Soil
 
 ```mermaid

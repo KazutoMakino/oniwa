@@ -27,6 +27,32 @@
 
 ---
 
+## 📜 学術論文 & 引用情報 (Research Paper & Citation)
+
+本プロジェクトの研究成果や実装を学術研究・論文・技術記事等で引用・参照される場合は、以下のプレプリントをご利用ください：
+
+> **"Organic Non-Datacenter Intelligence: A Pure-Rust Full Quaternion Transformer for Edge Decision-Making via Irreversible Lossy Compression"**  
+> **著者:** 牧野一翔 (Kazuto Makino / *Independent Researcher, Aichi, Japan*)  
+> **プレプリントPDF:** [paper/main.pdf](paper/main.pdf) | **LaTeXソースコード:** [paper/](paper/)
+
+```bibtex
+@article{makino2026oniwa,
+  title={Organic Non-Datacenter Intelligence: A Pure-Rust Full Quaternion Transformer for Edge Decision-Making via Irreversible Lossy Compression},
+  author={Makino, Kazuto},
+  journal={arXiv preprint},
+  year={2026},
+  url={https://github.com/KazutoMakino/oniwa}
+}
+```
+
+論文のローカルビルド・提出パッケージ作成：
+```bash
+cd paper && make        # 13ページのPDFを自動コンパイル
+make arxiv              # arXiv提出用のクリーンなtarball (oniwa-paper-arxiv.tar.gz) を生成
+```
+
+---
+
 ## 構想：3つの車輪と土壌
 
 ```mermaid
