@@ -8,3 +8,10 @@
 *.out
 *.synctex.gz
 *.toc
+
+# Temporary preview images
+page-*.png
+page-test-*.png
+
+# arXiv package tarball
+oniwa-paper-arxiv.tar.gz
