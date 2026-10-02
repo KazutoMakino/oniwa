@@ -33,7 +33,7 @@
 
 > **"Organic Non-Datacenter Intelligence: A Pure-Rust Full Quaternion Transformer for Edge Decision-Making via Irreversible Lossy Compression"**  
 > **著者:** 牧野一翔 (Kazuto Makino / *Independent Researcher, Aichi, Japan*)  
-> **プレプリントPDF:** [paper/main.pdf](paper/main.pdf) | **LaTeXソースコード:** [paper/](paper/)
+> **プレプリントPDF:** [paper/oniwa-quaternion-transformer.pdf](paper/oniwa-quaternion-transformer.pdf) | **LaTeXソースコード:** [paper/](paper/)
 
 ```bibtex
 @article{makino2026oniwa,

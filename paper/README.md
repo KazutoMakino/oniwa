@@ -33,7 +33,7 @@ Run `make` inside the `paper` directory:
 ```bash
 make
 ```
-This runs the full compilation pass (`pdflatex` $\rightarrow$ `bibtex` $\rightarrow$ `pdflatex` $\times 2$) to generate `main.pdf`.
+This runs the full compilation pass (`pdflatex` $\rightarrow$ `bibtex` $\rightarrow$ `pdflatex` $\times 2$) to generate `oniwa-quaternion-transformer.pdf` (and `main.pdf`).
 
 ### Prepare arXiv Submission Package
 To generate the `.tar.gz` bundle required for uploading to arXiv:
