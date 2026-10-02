@@ -3,7 +3,8 @@
 This directory contains the LaTeX source code, bibliographies, and build configurations for the ONIWA research paper:
 
 > **"Organic Non-Datacenter Intelligence: A Pure-Rust Full Quaternion Transformer for Edge Decision-Making via Irreversible Lossy Compression"**  
-> *Author:* Kazuto Makino (*Independent Researcher, Aichi, Japan*)
+> *Author:* Kazuto Makino (*Independent Researcher, Aichi, Japan*)  
+> *DOI:* [10.5281/zenodo.23107563](https://doi.org/10.5281/zenodo.23107563)
 
 ---
 
