@@ -1,6 +1,6 @@
 .PHONY: all clean arxiv
 
-PDF = main.pdf
+PDF = oniwa-quaternion-transformer.pdf
 SRC = main.tex main.bib
 
 all: $(PDF)
@@ -10,6 +10,7 @@ $(PDF): $(SRC)
 	bibtex main
 	pdflatex -interaction=nonstopmode main.tex
 	pdflatex -interaction=nonstopmode main.tex
+	cp main.pdf $(PDF)
 
 arxiv: $(PDF)
 	@echo "Packaging for arXiv submission..."

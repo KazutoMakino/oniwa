@@ -34,7 +34,7 @@ If you use or reference ONIWA in your academic research, please cite our paper:
 
 > **"Organic Non-Datacenter Intelligence: A Pure-Rust Full Quaternion Transformer for Edge Decision-Making via Irreversible Lossy Compression"**  
 > **Author:** Kazuto Makino (*Independent Researcher, Aichi, Japan*)  
-> **Preprint:** [paper/main.pdf](paper/main.pdf) | **LaTeX Source:** [paper/](paper/)
+> **Preprint:** [paper/oniwa-quaternion-transformer.pdf](paper/oniwa-quaternion-transformer.pdf) | **LaTeX Source:** [paper/](paper/)
 
 ```bibtex
 @article{makino2026oniwa,
